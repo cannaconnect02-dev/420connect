@@ -1,25 +1,26 @@
 {
-  "name": "420connect-marketplace",
+  "name": "marketplace-mvp",
   "version": "1.0.0",
-  "description": "Multi-app cannabis delivery marketplace platform",
-  "private": true,
-  "type": "module",
-  "workspaces": [
-    "apps/*"
-  ],
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start:all": "npm run dev:all",
-    "dev:all": "npm run dev --workspace=apps/merchant-portal & npm run dev --workspace=apps/admin-dashboard & npm run dev --workspace=apps/customer-app & npm run dev --workspace=apps/driver-app",
-    "dev:merchant": "npm run dev --workspace=apps/merchant-portal",
-    "dev:admin": "npm run dev --workspace=apps/admin-dashboard",
-    "dev:customer": "npm run dev --workspace=apps/customer-app",
-    "dev:driver": "npm run dev --workspace=apps/driver-app",
-    "build": "npm run build --workspaces",
-    "lint": "npm run lint --workspaces",
-    "test": "npm run test --workspaces"
+    "test": "node tests/full_flow_setup.js --test-mode",
+    "test:live": "node tests/full_flow_setup.js",
+    "test:setup": "NODE_ENV=test node tests/full_flow_setup.js --test-mode",
+    "start:all": "concurrently -n \"ADMIN,MERCH,DRIVR,CUST\" -c \"bgBlue.bold,bgGreen.bold,bgYellow.bold,bgMagenta.bold\" \"npm run start:admin\" \"npm run start:merchant\" \"npm run start:driver\" \"npm run start:customer\"",
+    "start:admin": "cd apps/admin-dashboard && npm run dev -- --port 5173",
+    "start:merchant": "cd apps/merchant-portal && npm run dev -- --port 5174",
+    "start:driver": "cd apps/driver-app && npx expo start --port 8081",
+    "start:customer": "cd apps/customer-app && npx expo start --port 8082"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
   "devDependencies": {
-    "@types/node": "^24.10.1",
-    "typescript": "~5.9.3"
+    "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.91.0"
   }
 }
