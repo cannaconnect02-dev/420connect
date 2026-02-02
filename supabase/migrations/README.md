@@ -1,0 +1,2 @@
+-- Supabase migration placeholder
+-- Move SQL files from root to this migrations directory
