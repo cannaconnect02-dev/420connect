@@ -1,0 +1,26 @@
+/* Tailwind v4 syntax */
+@import "tailwindcss";
+
+/* Theme customization for merchant portal - matching admin-dashboard */
+@theme {
+  /* Green primary color for merchant branding */
+  --color-primary: #4ADE80;
+
+  /* Slate color palette for dark theme */
+  --color-background: #020617;
+  --color-surface: #0f172a;
+}
+
+/* Global styles */
+body {
+  @apply bg-slate-950 text-slate-200 antialiased;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Override any inherited border-style that causes debug grids */
+*,
+*::before,
+*::after {
+  border-style: solid;
+  border-width: 0;
+}
