@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "customer-app",
-    "slug": "customer-app",
-    "scheme": "420connect",
+    "slug": "420connect-customer-app",
+    "scheme": "connect420",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -29,6 +29,19 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "38601dce-e29c-4987-9540-2cf8fc50b661"
+      }
+    },
+    "owner": "stubbe.adupoku",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/38601dce-e29c-4987-9540-2cf8fc50b661"
+    }
   }
 }
