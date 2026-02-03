@@ -25,7 +25,10 @@ function deg2rad(deg: number): number {
 // Constants
 const MAX_DELIVERY_DISTANCE_KM = 35;
 
+import { useRouter } from 'expo-router';
+
 export default function OrdersScreen() {
+    const router = useRouter();
     const { items, removeFromCart, total, clearCart, restaurantId } = useCart();
     const [placingOrder, setPlacingOrder] = useState(false);
     const [activeOrders, setActiveOrders] = useState<any[]>([]);
@@ -62,26 +65,37 @@ export default function OrdersScreen() {
     const handleCheckout = async () => {
         setPlacingOrder(true);
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) throw new Error("Not logged in");
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                router.replace('/auth');
+                return;
+            }
 
-            // Get user's confirmed delivery location from profile
-            const { data: profile, error: profileError } = await supabase
+            const { data: profile } = await supabase
                 .from('profiles')
-                .select('delivery_lat, delivery_lng, address, address_confirmed')
-                .eq('id', session.user.id)
+                .select('address_confirmed')
+                .eq('id', user.id)
                 .single();
 
-            if (profileError || !profile) throw new Error("Could not fetch your profile");
-
-            // Check if address is confirmed
-            if (!profile.address_confirmed || !profile.delivery_lat || !profile.delivery_lng) {
+            if (!profile?.address_confirmed) {
                 throw new Error("Please confirm your delivery address before placing an order.");
             }
 
-            const customerLat = profile.delivery_lat;
-            const customerLng = profile.delivery_lng;
-            const customerAddress = profile.address || 'Address on file';
+            // Fetch address from user_addresses
+            const { data: addressData } = await supabase
+                .from('user_addresses')
+                .select('lat, lng, address_line1, city')
+                .eq('user_id', user.id)
+                .eq('is_default', true)
+                .single();
+
+            if (!addressData || !addressData.lat || !addressData.lng) {
+                throw new Error("Delivery address not found. Please update your address in profile.");
+            }
+
+            const customerLat = addressData.lat;
+            const customerLng = addressData.lng;
+            const customerAddress = `${addressData.address_line1}, ${addressData.city}`;
 
             // 1. Fetch restaurant location for geofencing check
             const { data: restaurant, error: restError } = await supabase
@@ -112,7 +126,7 @@ export default function OrdersScreen() {
             const { data: order, error } = await supabase
                 .from('orders')
                 .insert({
-                    customer_id: session.user.id,
+                    customer_id: user.id,
                     restaurant_id: restaurantId,
                     total_amount: total,
                     status: 'pending',

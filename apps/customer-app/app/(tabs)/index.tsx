@@ -33,27 +33,33 @@ export default function HomeScreen() {
     }, []);
 
     async function fetchUserLocationAndData() {
-        // Get user's confirmed delivery location from profile
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('delivery_lat, delivery_lng')
-                .eq('id', user.id)
-                .single();
-
-            if (profile?.delivery_lat && profile?.delivery_lng) {
-                setUserLocation({ lat: profile.delivery_lat, lng: profile.delivery_lng });
-                fetchDataWithDistance(profile.delivery_lat, profile.delivery_lng);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                fetchDataWithDistance(null, null); // No user, fetch without distance
                 return;
             }
-        }
 
-        // Fallback: fetch without distance filtering
-        fetchData();
+            const { data: addressData } = await supabase
+                .from('user_addresses')
+                .select('lat, lng')
+                .eq('user_id', user.id)
+                .eq('is_default', true)
+                .single();
+
+            if (addressData?.lat && addressData?.lng) {
+                setUserLocation({ lat: addressData.lat, lng: addressData.lng });
+                fetchDataWithDistance(addressData.lat, addressData.lng);
+            } else {
+                fetchDataWithDistance(null, null); // No default address, fetch without distance
+            }
+        } catch (error) {
+            console.error("Error fetching user location:", error);
+            fetchDataWithDistance(null, null); // On error, fetch without distance
+        }
     }
 
-    async function fetchDataWithDistance(userLat: number, userLng: number) {
+    async function fetchDataWithDistance(userLat: number | null, userLng: number | null) {
         // Fetch all active restaurants
         const { data: rData } = await supabase
             .from('restaurants')

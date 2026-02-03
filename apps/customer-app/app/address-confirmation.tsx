@@ -5,13 +5,15 @@ import {
     ActivityIndicator
 } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { MapPin, Navigation, CheckCircle } from 'lucide-react-native';
 import { NanoTheme } from '../constants/nanobanana';
 import * as Location from 'expo-location';
 
 export default function AddressConfirmationScreen() {
     const router = useRouter();
+    const params = useLocalSearchParams();
+
     const [loading, setLoading] = useState(false);
     const [gettingLocation, setGettingLocation] = useState(false);
     const [address, setAddress] = useState('');
@@ -22,8 +24,36 @@ export default function AddressConfirmationScreen() {
 
     // Check if user already has confirmed address
     useEffect(() => {
-        checkExistingAddress();
-    }, []);
+        if (params.editing !== 'true') {
+            checkExistingAddress();
+        } else {
+            // Pre-fill data if editing
+            loadExistingAddress();
+        }
+    }, [params.editing]);
+
+    async function loadExistingAddress() {
+        try {
+            // ... logic to load existing address to pre-fill the form
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { data: addressData } = await supabase
+                .from('user_addresses')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('is_default', true)
+                .single();
+
+            if (addressData) {
+                setAddress(addressData.address_line1);
+                setSuburb(addressData.suburb || '');
+                setCity(addressData.city);
+                setPostalCode(addressData.postal_code || '');
+                setCoordinates({ lat: addressData.lat, lng: addressData.lng });
+            }
+        } catch (e) { console.log("Error loading address", e) }
+    }
 
     async function checkExistingAddress() {
         const { data: { user } } = await supabase.auth.getUser();
@@ -31,12 +61,21 @@ export default function AddressConfirmationScreen() {
 
         const { data: profile } = await supabase
             .from('profiles')
-            .select('address_confirmed, address, delivery_lat, delivery_lng')
+            .select('address_confirmed')
             .eq('id', user.id)
             .single();
 
-        if (profile?.address_confirmed && profile?.delivery_lat && profile?.delivery_lng) {
-            router.replace('/(tabs)');
+        if (profile?.address_confirmed) {
+            // Optional: Check if real address exists
+            const { data: addressData } = await supabase
+                .from('user_addresses')
+                .select('id')
+                .eq('user_id', user.id)
+                .limit(1);
+
+            if (addressData && addressData.length > 0) {
+                router.replace('/(tabs)');
+            }
         }
     }
 
@@ -106,25 +145,53 @@ export default function AddressConfirmationScreen() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error('Not authenticated');
 
-            const fullAddress = `${address}, ${suburb}, ${city}${postalCode ? `, ${postalCode}` : ''}`;
+            // 1. Unset any existing default addresses for this user
+            const { error: updateError } = await supabase
+                .from('user_addresses')
+                .update({ is_default: false })
+                .eq('user_id', user.id);
 
-            const { error } = await supabase
+            if (updateError) throw updateError;
+
+            // 2. Insert into user_addresses
+            const { error: addressError } = await supabase
+                .from('user_addresses')
+                .insert({
+                    user_id: user.id,
+                    address_line1: address,
+                    suburb: suburb,
+                    city: city,
+                    postal_code: postalCode,
+                    lat: coords.lat,
+                    lng: coords.lng,
+                    is_default: true
+                });
+
+            if (addressError) throw addressError;
+
+            // 2. Update profile confirmed status
+            const { error: profileError } = await supabase
                 .from('profiles')
-                .update({
-                    address: fullAddress,
-                    delivery_lat: coords.lat,
-                    delivery_lng: coords.lng,
-                    address_confirmed: true
-                })
+                .update({ address_confirmed: true })
                 .eq('id', user.id);
 
-            if (error) throw error;
+            if (profileError) throw profileError;
 
-            Alert.alert('Success', 'Your delivery address has been confirmed!');
-            // Auto-redirect to menu after brief delay
-            setTimeout(() => {
+            if (profileError) throw profileError;
+
+            // Refresh session to update global address_confirmed state in _layout
+            await supabase.auth.refreshSession();
+
+            // Navigate immediately
+            if (params.editing === 'true') {
+                if (router.canGoBack()) {
+                    router.back();
+                } else {
+                    router.replace('/(tabs)/profile');
+                }
+            } else {
                 router.replace('/(tabs)');
-            }, 1500);
+            }
         } catch (error: any) {
             Alert.alert('Error', error.message || 'Failed to save address');
         } finally {

@@ -1,10 +1,12 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { supabase } from '../../lib/supabase';
-import { useState, useEffect } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useState, useEffect, useCallback } from 'react';
 import { User, Mail, CreditCard, MapPin, LogOut, Edit2 } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
 
 interface UserProfile {
+    first_name: string | null;
+    surname: string | null;
     full_name: string | null;
     email: string;
     address: string | null;
@@ -18,28 +20,51 @@ export default function ProfileScreen() {
     const [loading, setLoading] = useState(true);
     const [membershipNumber, setMembershipNumber] = useState('');
 
-    useEffect(() => {
-        fetchProfile();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            fetchProfile();
+        }, [])
+    );
 
     async function fetchProfile() {
         try {
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
+            if (!user) throw new Error('No user on the session!');
 
-            const { data } = await supabase
+            const { data, error, status } = await supabase
                 .from('profiles')
-                .select('full_name, address, address_confirmed, created_at')
+                .select('first_name, surname, full_name, address_confirmed, created_at')
                 .eq('id', user.id)
                 .single();
 
-            setProfile({
-                full_name: data?.full_name || null,
-                email: user.email || '',
-                address: data?.address || null,
-                address_confirmed: data?.address_confirmed || false,
-                created_at: data?.created_at || user.created_at
-            });
+            if (error && status !== 406) {
+                throw error;
+            }
+
+            if (data) {
+                // Fetch address
+                const { data: addressData } = await supabase
+                    .from('user_addresses')
+                    .select('address_line1, city')
+                    .eq('user_id', user.id)
+                    .eq('is_default', true)
+                    .single();
+
+                let displayAddress = null;
+                if (addressData) {
+                    displayAddress = `${addressData.address_line1}, ${addressData.city}`;
+                }
+
+                setProfile({
+                    first_name: data.first_name,
+                    surname: data.surname,
+                    full_name: data.full_name,
+                    email: user.email || '', // Retain email from original
+                    address: displayAddress,
+                    address_confirmed: data.address_confirmed || false,
+                    created_at: new Date(data.created_at).toLocaleDateString(),
+                });
+            }
 
             // Generate membership number from user ID (first 8 chars uppercase)
             setMembershipNumber(`420C-${user.id.substring(0, 8).toUpperCase()}`);
@@ -80,8 +105,20 @@ export default function ProfileScreen() {
                         <User size={20} color="#94a3b8" />
                     </View>
                     <View style={styles.infoContent}>
-                        <Text style={styles.infoLabel}>Full Name</Text>
-                        <Text style={styles.infoValue}>{profile?.full_name || 'Not set'}</Text>
+                        <Text style={styles.infoLabel}>Name</Text>
+                        <Text style={styles.infoValue}>{profile?.first_name || 'Not set'}</Text>
+                    </View>
+                </View>
+
+                <View style={styles.divider} />
+
+                <View style={styles.infoRow}>
+                    <View style={styles.iconContainer}>
+                        <User size={20} color="#94a3b8" />
+                    </View>
+                    <View style={styles.infoContent}>
+                        <Text style={styles.infoLabel}>Surname</Text>
+                        <Text style={styles.infoValue}>{profile?.surname || 'Not set'}</Text>
                     </View>
                 </View>
 
@@ -125,7 +162,7 @@ export default function ProfileScreen() {
                     </View>
                     <TouchableOpacity
                         style={styles.editButton}
-                        onPress={() => router.push('/address-confirmation')}
+                        onPress={() => router.push({ pathname: '/address-confirmation', params: { editing: 'true' } })}
                     >
                         <Edit2 size={16} color="#10b981" />
                     </TouchableOpacity>
