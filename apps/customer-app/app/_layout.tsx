@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // ActionSheetProvider removed
 import { DefaultTheme, DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, Slot, useSegments } from 'expo-router';
@@ -76,5 +77,20 @@ export default function RootLayout() {
                 <Slot />
             </CartProvider>
         </ThemeProvider>
+=======
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+
+export default function RootLayout() {
+    return (
+        <>
+            <StatusBar style="auto" />
+            <Stack
+                screenOptions={{
+                    headerShown: false,
+                }}
+            />
+        </>
+>>>>>>> 94f8fb0 (re-organise code)
     );
 }
