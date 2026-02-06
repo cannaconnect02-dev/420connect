@@ -10,6 +10,8 @@ import { MapPin, Navigation, CheckCircle } from 'lucide-react-native';
 import { NanoTheme } from '../constants/nanobanana';
 import * as Location from 'expo-location';
 
+import { useRegistration } from '../lib/RegistrationContext';
+
 export default function AddressConfirmationScreen() {
     const router = useRouter();
     const params = useLocalSearchParams();
@@ -169,15 +171,14 @@ export default function AddressConfirmationScreen() {
 
             if (addressError) throw addressError;
 
-            // 2. Update profile confirmed status
+            // 3. EXPLICITLY update profiles confirmed status
             const { error: profileError } = await supabase
                 .from('profiles')
                 .update({ address_confirmed: true })
                 .eq('id', user.id);
 
             if (profileError) throw profileError;
-
-            if (profileError) throw profileError;
+            console.log('Profile updated: address_confirmed = true');
 
             // Refresh session to update global address_confirmed state in _layout
             await supabase.auth.refreshSession();

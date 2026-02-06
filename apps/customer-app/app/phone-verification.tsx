@@ -12,22 +12,31 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
-import { Mail, RefreshCw, CheckCircle } from 'lucide-react-native';
+import { Phone, RefreshCw, CheckCircle } from 'lucide-react-native';
 import { NanoTheme } from '../constants/nanobanana';
 import { supabase } from '../lib/supabase';
 
 const OTP_LENGTH = 6;
 
-export default function OTPVerificationScreen() {
+export default function PhoneVerificationScreen() {
     const router = useRouter();
-    const { email, type, userId } = useLocalSearchParams<{ email: string; type?: string; userId?: string }>();
+    const { phoneNumber, userId } = useLocalSearchParams<{ phoneNumber: string; userId: string }>();
 
     const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
     const [loading, setLoading] = useState(false);
+    const [sending, setSending] = useState(false);
     const [resending, setResending] = useState(false);
     const [countdown, setCountdown] = useState(0);
+    const [otpSent, setOtpSent] = useState(false);
 
     const inputRefs = useRef<(TextInput | null)[]>([]);
+
+    // Send OTP on mount
+    useEffect(() => {
+        if (phoneNumber && !otpSent) {
+            sendOTP();
+        }
+    }, [phoneNumber]);
 
     // Countdown timer for resend
     useEffect(() => {
@@ -40,10 +49,43 @@ export default function OTPVerificationScreen() {
     // Auto-verify when all digits entered
     useEffect(() => {
         const otpString = otp.join('');
-        if (otpString.length === OTP_LENGTH && !loading) {
+        if (otpString.length === OTP_LENGTH && !loading && otpSent) {
             verifyOTP(otpString);
         }
-    }, [otp]);
+    }, [otp, otpSent]);
+
+    const sendOTP = async () => {
+        if (!phoneNumber) {
+            Alert.alert('Error', 'Phone number not found. Please try signing up again.');
+            return;
+        }
+
+        setSending(true);
+        try {
+            // Use Supabase phone OTP
+            const { error } = await supabase.auth.signInWithOtp({
+                phone: phoneNumber,
+            });
+
+            if (error) throw error;
+
+            setOtpSent(true);
+            setCountdown(60);
+            Alert.alert('Code Sent', `A verification code has been sent to ${formatPhoneDisplay(phoneNumber)}`);
+        } catch (err: any) {
+            Alert.alert('Error', err.message || 'Failed to send verification code.');
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const formatPhoneDisplay = (phone: string): string => {
+        // Format: +27 82 123 4567
+        if (phone.length === 12) {
+            return `${phone.slice(0, 3)} ${phone.slice(3, 5)} ${phone.slice(5, 8)} ${phone.slice(8)}`;
+        }
+        return phone;
+    };
 
     const handleOtpChange = (text: string, index: number) => {
         // Only allow digits
@@ -66,46 +108,53 @@ export default function OTPVerificationScreen() {
     };
 
     const verifyOTP = async (otpCode: string) => {
-        if (!email) {
-            Alert.alert('Error', 'Email not found. Please try signing up again.');
+        if (!phoneNumber) {
+            Alert.alert('Error', 'Phone number not found. Please try signing up again.');
             return;
         }
 
+        let targetUserId = userId;
+        if (!targetUserId) {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) targetUserId = user.id;
+        }
+
+        if (!targetUserId) {
+            Alert.alert('Error', 'User ID not found. Please try signing up again.');
+            return;
+        }
+
+        console.log('Verifying OTP for user:', targetUserId, 'Phone:', phoneNumber);
+
         setLoading(true);
         try {
-            // Use Supabase's built-in OTP verification
+            // Verify phone OTP
             const { error } = await supabase.auth.verifyOtp({
-                email,
+                phone: phoneNumber,
                 token: otpCode,
-                type: type === 'recovery' ? 'recovery' : 'signup'
+                type: 'sms'
             });
 
             if (error) throw error;
 
-            if (type === 'recovery') {
-                router.replace('/reset-password');
-            } else {
-                // EXPLICITLY update profiles table to mark email as verified
-                // This ensures the public profile stays in sync with auth.users
-                const targetId = userId || (await supabase.auth.getUser()).data.user?.id;
-
-                if (targetId) {
-                    await supabase
-                        .from('profiles')
-                        .update({ email_verified: true })
-                        .eq('id', targetId);
-                    console.log('Profile updated: email_verified = true');
-                }
-
-                Alert.alert('Success', 'Email verified successfully!', [
-                    {
-                        text: 'Continue', onPress: () => router.replace({
-                            pathname: '/phone-entry',
-                            params: { userId: targetId }
-                        })
-                    }
-                ]);
+            // EXPLICITLY update profiles table to mark phone as verified AND save the number
+            if (targetUserId) {
+                await supabase
+                    .from('profiles')
+                    .update({
+                        phone_verified: true,
+                        phone_number: phoneNumber
+                    })
+                    .eq('id', targetUserId);
+                console.log('Profile updated: phone_verified = true, number saved');
             }
+
+            // Refresh session to ensure RootLayout updates profile status
+            await supabase.auth.refreshSession();
+
+            Alert.alert('Success', 'Phone number verified successfully!', [
+                { text: 'Continue', onPress: () => router.replace('/(tabs)/') }
+            ]);
         } catch (err: any) {
             Alert.alert('Verification Failed', err.message || 'Invalid code. Please try again.');
             setOtp(Array(OTP_LENGTH).fill(''));
@@ -116,25 +165,18 @@ export default function OTPVerificationScreen() {
     };
 
     const resendOTP = async () => {
-        if (countdown > 0 || !email) return;
+        if (countdown > 0 || !phoneNumber) return;
 
         setResending(true);
         try {
-            if (type === 'recovery') {
-                // For recovery, we just request the password reset email again
-                const { error } = await supabase.auth.resetPasswordForEmail(email);
-                if (error) throw error;
-            } else {
-                // Use Supabase's resend method for signup
-                const { error } = await supabase.auth.resend({
-                    type: 'signup',
-                    email,
-                });
-                if (error) throw error;
-            }
+            const { error } = await supabase.auth.signInWithOtp({
+                phone: phoneNumber,
+            });
 
-            Alert.alert('Code Sent', 'A new verification code has been sent to your email.');
-            setCountdown(60); // 60 second cooldown
+            if (error) throw error;
+
+            Alert.alert('Code Sent', 'A new verification code has been sent to your phone.');
+            setCountdown(60);
             setOtp(Array(OTP_LENGTH).fill(''));
         } catch (err: any) {
             Alert.alert('Error', err.message || 'Failed to resend code.');
@@ -142,6 +184,17 @@ export default function OTPVerificationScreen() {
             setResending(false);
         }
     };
+
+    if (sending) {
+        return (
+            <View style={[styles.container, styles.centerContent]}>
+                <StatusBar barStyle="light-content" backgroundColor={NanoTheme.colors.background} />
+                <Stack.Screen options={{ headerShown: false }} />
+                <ActivityIndicator size="large" color={NanoTheme.colors.primary} />
+                <Text style={styles.sendingText}>Sending verification code...</Text>
+            </View>
+        );
+    }
 
     return (
         <KeyboardAvoidingView
@@ -155,13 +208,13 @@ export default function OTPVerificationScreen() {
                 {/* Header */}
                 <View style={styles.header}>
                     <View style={styles.iconCircle}>
-                        <Mail size={40} color={NanoTheme.colors.primary} />
+                        <Phone size={40} color={NanoTheme.colors.primary} />
                     </View>
-                    <Text style={styles.title}>Verify Email</Text>
+                    <Text style={styles.title}>Verify Phone</Text>
                     <Text style={styles.subtitle}>
                         We sent a 6-digit code to
                     </Text>
-                    <Text style={styles.email}>{email}</Text>
+                    <Text style={styles.phone}>{formatPhoneDisplay(phoneNumber || '')}</Text>
                 </View>
 
                 {/* OTP Input */}
@@ -218,7 +271,7 @@ export default function OTPVerificationScreen() {
                     disabled={otp.join('').length < OTP_LENGTH || loading}
                 >
                     <CheckCircle size={20} color="black" />
-                    <Text style={styles.verifyButtonText}>Verify Email</Text>
+                    <Text style={styles.verifyButtonText}>Verify Phone</Text>
                 </TouchableOpacity>
             </View>
         </KeyboardAvoidingView>
@@ -229,6 +282,15 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: NanoTheme.colors.background,
+    },
+    centerContent: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    sendingText: {
+        color: NanoTheme.colors.textSecondary,
+        marginTop: 16,
+        fontSize: 16,
     },
     content: {
         flex: 1,
@@ -261,11 +323,12 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: NanoTheme.colors.textSecondary,
     },
-    email: {
-        fontSize: 16,
+    phone: {
+        fontSize: 18,
         color: NanoTheme.colors.primary,
         fontWeight: '600',
         marginTop: 4,
+        letterSpacing: 1,
     },
     otpContainer: {
         flexDirection: 'row',

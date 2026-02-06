@@ -19,6 +19,7 @@ export default function AuthScreen() {
     // Sign Up Fields
     const [firstName, setFirstName] = useState('');
     const [surname, setSurname] = useState('');
+    const [preferredName, setPreferredName] = useState('');
     const [dob, setDob] = useState<Date | null>(null);
     const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -90,6 +91,7 @@ export default function AuthScreen() {
                             role: 'customer',
                             first_name: firstName,
                             surname: surname,
+                            preferred_name: preferredName.trim() || firstName,
                             dob: formatDateForDB(dob),
                         }
                     }
@@ -107,7 +109,34 @@ export default function AuthScreen() {
                 });
             }
         } catch (e: any) {
-            Alert.alert('Error', e.message);
+            if (e.message.includes('Email not confirmed')) {
+                // Handle unverified email
+                Alert.alert(
+                    'Email Not Verified',
+                    'Your email address has not been verified yet. We have sent you a new verification code.',
+                    [
+                        {
+                            text: 'OK',
+                            onPress: async () => {
+                                try {
+                                    await supabase.auth.resend({
+                                        type: 'signup',
+                                        email,
+                                    });
+                                    router.push({
+                                        pathname: '/otp-verification',
+                                        params: { email }
+                                    });
+                                } catch (resendError) {
+                                    console.log('Error resending code:', resendError);
+                                }
+                            }
+                        }
+                    ]
+                );
+            } else {
+                Alert.alert('Error', e.message);
+            }
         } finally {
             setLoading(false);
         }
@@ -171,6 +200,22 @@ export default function AuthScreen() {
                                             placeholderTextColor={NanoTheme.colors.textSecondary}
                                             onChangeText={setSurname}
                                             value={surname}
+                                            autoCapitalize="words"
+                                        />
+                                    </View>
+                                </View>
+
+                                {/* Preferred Name */}
+                                <View style={styles.inputContainer}>
+                                    <Text style={styles.label}>Preferred Name (optional)</Text>
+                                    <View style={styles.iconInputWrapper}>
+                                        <User size={20} color={NanoTheme.colors.textSecondary} style={styles.inputIcon} />
+                                        <TextInput
+                                            style={[styles.input, styles.iconInput]}
+                                            placeholder="How we should call you"
+                                            placeholderTextColor={NanoTheme.colors.textSecondary}
+                                            onChangeText={setPreferredName}
+                                            value={preferredName}
                                             autoCapitalize="words"
                                         />
                                     </View>
