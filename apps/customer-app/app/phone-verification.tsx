@@ -62,8 +62,10 @@ export default function PhoneVerificationScreen() {
 
         setSending(true);
         try {
-            // Use Supabase phone OTP
-            const { error } = await supabase.auth.signInWithOtp({
+            // Use updateUser to add phone to existing user (sends OTP)
+            // This keeps the session on the current user instead of creating a new phone-only user
+            console.log('Sending phone verification OTP via updateUser...');
+            const { error } = await supabase.auth.updateUser({
                 phone: phoneNumber,
             });
 
@@ -124,38 +126,69 @@ export default function PhoneVerificationScreen() {
             return;
         }
 
-        console.log('Verifying OTP for user:', targetUserId, 'Phone:', phoneNumber);
+        console.log('=== PHONE VERIFICATION START ===');
+        console.log('User ID:', targetUserId);
+        console.log('Phone:', phoneNumber);
+        console.log('OTP Code:', otpCode);
 
         setLoading(true);
         try {
-            // Verify phone OTP
-            const { error } = await supabase.auth.verifyOtp({
+            // Step 1: Verify phone OTP with phone_change type (for updateUser flow)
+            console.log('Step 1: Calling supabase.auth.verifyOtp with phone_change...');
+            const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
                 phone: phoneNumber,
                 token: otpCode,
-                type: 'sms'
+                type: 'phone_change'
             });
 
-            if (error) throw error;
+            console.log('Verify OTP response data:', JSON.stringify(verifyData));
 
-            // EXPLICITLY update profiles table to mark phone as verified AND save the number
-            if (targetUserId) {
-                await supabase
-                    .from('profiles')
-                    .update({
-                        phone_verified: true,
-                        phone_number: phoneNumber
-                    })
-                    .eq('id', targetUserId);
-                console.log('Profile updated: phone_verified = true, number saved');
+            if (verifyError) {
+                console.log('Verify OTP ERROR:', verifyError.message);
+                throw verifyError;
             }
 
-            // Refresh session to ensure RootLayout updates profile status
+            console.log('Step 1 SUCCESS: OTP verified, phone added to user');
+
+            // Step 2: Update profiles table to mark phone as verified
+            // Profile should exist for email user, so use update (not upsert)
+            console.log('Step 2: Updating profiles table...');
+            const { data: updateData, error: updateError } = await supabase
+                .from('profiles')
+                .update({
+                    phone_verified: true,
+                    phone_number: phoneNumber
+                })
+                .eq('id', targetUserId)
+                .select();
+
+            console.log('Profile update response:', JSON.stringify(updateData));
+
+            if (updateError) {
+                console.log('Profile update ERROR:', updateError.message);
+                // Don't throw here - still show success if OTP was verified
+            } else {
+                console.log('Step 2 SUCCESS: Profile updated');
+            }
+
+            // Step 3: Refresh session
+            console.log('Step 3: Refreshing session...');
             await supabase.auth.refreshSession();
+            console.log('Step 3 SUCCESS: Session refreshed');
+
+            console.log('=== PHONE VERIFICATION COMPLETE ===');
 
             Alert.alert('Success', 'Phone number verified successfully!', [
-                { text: 'Continue', onPress: () => router.replace('/(tabs)/') }
+                {
+                    text: 'Continue', onPress: () => {
+                        console.log('Navigating to main tabs...');
+                        router.replace('/(tabs)/');
+                    }
+                }
             ]);
         } catch (err: any) {
+            console.log('=== PHONE VERIFICATION FAILED ===');
+            console.log('Error:', err.message || err);
             Alert.alert('Verification Failed', err.message || 'Invalid code. Please try again.');
             setOtp(Array(OTP_LENGTH).fill(''));
             inputRefs.current[0]?.focus();
@@ -169,7 +202,8 @@ export default function PhoneVerificationScreen() {
 
         setResending(true);
         try {
-            const { error } = await supabase.auth.signInWithOtp({
+            // Use updateUser to resend phone OTP (keeps current session)
+            const { error } = await supabase.auth.updateUser({
                 phone: phoneNumber,
             });
 
