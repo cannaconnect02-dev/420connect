@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Loader, CheckCircle, Upload, Eye, EyeOff, Store, MapPin, FileText, Calendar } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Loader, CheckCircle, Upload, Eye, EyeOff, Store, FileText, Calendar, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -8,16 +9,16 @@ import { Input } from '@/components/ui/input';
 // NO inline styles - only Tailwind classes
 
 export default function Auth() {
+    const { createMerchant } = useAuth();
     const [loading, setLoading] = useState(false);
     const [isLogin, setIsLogin] = useState(true);
 
     // Auth State
-    const [email, setEmail] = useState('');
+    const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [fullName, setFullName] = useState('');
     const [dob, setDob] = useState('');
     const [storeName, setStoreName] = useState('');
-    const [storeAddress, setStoreAddress] = useState('');
     const [regNumber, setRegNumber] = useState('');
     const [documentFile, setDocumentFile] = useState<File | null>(null);
     const [showPassword, setShowPassword] = useState(false);
@@ -32,7 +33,6 @@ export default function Auth() {
             if (!isLogin) {
                 if (!dob) throw new Error("Date of birth is required");
                 if (!storeName) throw new Error("Store Name is required");
-                if (!storeAddress) throw new Error("Store Address is required");
                 if (!regNumber) throw new Error("Registration Number is required");
 
                 const birthDate = new Date(dob);
@@ -45,24 +45,21 @@ export default function Auth() {
                 if (age < 18) throw new Error('You must be at least 18 years old to sign up.');
             }
 
+            const email = username.includes('@') ? username : `${username}@temp.420connect.local`;
+
             if (isLogin) {
                 const { error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
             } else {
-                const { error } = await supabase.auth.signUp({
-                    email,
-                    password,
-                    options: {
-                        data: {
-                            full_name: fullName,
-                            role: 'merchant',
-                            date_of_birth: dob,
-                            store_name: storeName,
-                            store_address: storeAddress,
-                            registration_number: regNumber
-                        }
-                    },
+                // Use new createMerchant function
+                const { error } = await createMerchant(username, password, {
+                    full_name: fullName,
+                    role: 'merchant',
+                    date_of_birth: dob,
+                    store_name: storeName,
+                    registration_number: regNumber
                 });
+
                 if (error) throw error;
             }
         } catch (err: any) {
@@ -140,19 +137,6 @@ export default function Auth() {
                                 />
                             </div>
 
-                            {/* Store Address */}
-                            <div className="relative">
-                                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
-                                <Input
-                                    type="text"
-                                    placeholder="Store Address"
-                                    value={storeAddress}
-                                    onChange={(e) => setStoreAddress(e.target.value)}
-                                    required
-                                    className="pl-11"
-                                />
-                            </div>
-
                             {/* Registration Number */}
                             <div className="relative">
                                 <FileText className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
@@ -189,15 +173,17 @@ export default function Auth() {
                         </>
                     )}
 
-                    {/* Email */}
+                    {/* Username */}
                     <div>
                         <Input
-                            type="email"
-                            placeholder="Email Address"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
+                            type="text"
+                            placeholder="Username"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
                             required
+                            className="pl-11"
                         />
+                        <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
                     </div>
 
                     {/* Password */}

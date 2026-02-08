@@ -20,14 +20,14 @@ export default function Orders() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // Fetch user's restaurant first
-        const { data: restaurant } = await supabase
-            .from('restaurants')
+        // Fetch user's store first
+        const { data: store } = await supabase
+            .from('stores')
             .select('id')
             .eq('owner_id', user.id)
             .maybeSingle();
 
-        if (!restaurant) {
+        if (!store) {
             setOrders([]);
             setLoading(false);
             return;
@@ -36,7 +36,7 @@ export default function Orders() {
         let query = supabase
             .from('orders')
             .select('*')
-            .eq('restaurant_id', restaurant.id)
+            .eq('store_id', store.id)
             .order('created_at', { ascending: false });
 
         if (statusFilter !== 'all') {

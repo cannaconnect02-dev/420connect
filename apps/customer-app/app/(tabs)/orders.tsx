@@ -29,7 +29,7 @@ import { useRouter } from 'expo-router';
 
 export default function OrdersScreen() {
     const router = useRouter();
-    const { items, removeFromCart, total, clearCart, restaurantId } = useCart();
+    const { items, removeFromCart, total, clearCart, storeId } = useCart();
     const [placingOrder, setPlacingOrder] = useState(false);
     const [activeOrders, setActiveOrders] = useState<any[]>([]);
     const [ratingModalVisible, setRatingModalVisible] = useState(false);
@@ -55,7 +55,7 @@ export default function OrdersScreen() {
 
         const { data } = await supabase
             .from('orders')
-            .select('*, restaurants(name)')
+            .select('*, stores(name)')
             .eq('customer_id', session.user.id)
             .order('created_at', { ascending: false });
 
@@ -97,28 +97,28 @@ export default function OrdersScreen() {
             const customerLng = addressData.lng;
             const customerAddress = `${addressData.address_line1}, ${addressData.city}`;
 
-            // 1. Fetch restaurant location for geofencing check
-            const { data: restaurant, error: restError } = await supabase
-                .from('restaurants')
+            // 1. Fetch store location for geofencing check
+            const { data: store, error: restError } = await supabase
+                .from('stores')
                 .select('latitude, longitude, name')
-                .eq('id', restaurantId)
+                .eq('id', storeId)
                 .single();
 
-            if (restError || !restaurant) throw new Error("Could not find restaurant details");
+            if (restError || !store) throw new Error("Could not find store details");
 
-            // Check if restaurant has location data
-            if (!restaurant.latitude || !restaurant.longitude) {
-                // Allow order if restaurant has no location (fallback)
-                console.log('Restaurant has no location data, allowing order');
+            // Check if store has location data
+            if (!store.latitude || !store.longitude) {
+                // Allow order if store has no location (fallback)
+                console.log('Store has no location data, allowing order');
             } else {
                 // 2. GEOFENCING CHECK - 35km limit
                 const distance = getDistanceFromLatLonInKm(
                     customerLat, customerLng,
-                    restaurant.latitude, restaurant.longitude
+                    store.latitude, store.longitude
                 );
 
                 if (distance > MAX_DELIVERY_DISTANCE_KM) {
-                    throw new Error(`Sorry, ${restaurant.name} is ${distance.toFixed(1)}km away. Maximum delivery distance is ${MAX_DELIVERY_DISTANCE_KM}km.`);
+                    throw new Error(`Sorry, ${store.name} is ${distance.toFixed(1)}km away. Maximum delivery distance is ${MAX_DELIVERY_DISTANCE_KM}km.`);
                 }
             }
 
@@ -127,7 +127,7 @@ export default function OrdersScreen() {
                 .from('orders')
                 .insert({
                     customer_id: user.id,
-                    restaurant_id: restaurantId,
+                    store_id: storeId, // Renamed column
                     total_amount: total,
                     status: 'pending',
                     delivery_address: customerAddress,
@@ -153,7 +153,7 @@ export default function OrdersScreen() {
             if (itemsError) throw itemsError;
 
             // Success
-            Alert.alert("Order Placed!", `${restaurant.name} has received your order.\nDelivering to: ${customerAddress}`);
+            Alert.alert("Order Placed!", `${store.name} has received your order.\nDelivering to: ${customerAddress}`);
             clearCart();
             fetchActiveOrders();
 
@@ -200,7 +200,7 @@ export default function OrdersScreen() {
                             return (
                                 <View style={styles.orderCard}>
                                     <View style={styles.orderHeader}>
-                                        <Text style={styles.orderRest}>{item.restaurants?.name}</Text>
+                                        <Text style={styles.orderRest}>{item.stores?.name}</Text>
                                         <View style={[styles.statusBadge, { backgroundColor: `${color}20` }]}>
                                             {/* @ts-ignore */}
                                             <Icon size={12} color={color} />

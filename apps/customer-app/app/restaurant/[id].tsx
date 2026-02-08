@@ -10,7 +10,7 @@ import { useCart } from '../../lib/CartContext';
 export default function RestaurantDetails() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
-    const [restaurant, setRestaurant] = useState<any>(null);
+    const [store, setStore] = useState<any>(null);
     const [menuItems, setMenuItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const { addToCart, items, total } = useCart();
@@ -24,19 +24,19 @@ export default function RestaurantDetails() {
 
         // 1. Fetch Restaurant Info
         const { data: rData, error: rError } = await supabase
-            .from('restaurants')
+            .from('stores')
             .select('*')
             .eq('id', id)
             .single();
 
         if (rError) console.error(rError);
-        else setRestaurant(rData);
+        else setStore(rData);
 
         // 2. Fetch Menu Items
         const { data: mData, error: mError } = await supabase
             .from('menu_items')
             .select('*')
-            .eq('restaurant_id', id);
+            .eq('store_id', id);
 
         if (mError) console.error(mError);
         else setMenuItems(mData || []);
@@ -69,8 +69,8 @@ export default function RestaurantDetails() {
             <ScrollView style={styles.content}>
                 {/* Restaurant Info */}
                 <View style={styles.infoSection}>
-                    <Text style={styles.title}>{restaurant?.name}</Text>
-                    <Text style={styles.description}>{restaurant?.description}</Text>
+                    <Text style={styles.title}>{store?.name}</Text>
+                    <Text style={styles.description}>{store?.description}</Text>
 
                     <View style={styles.metaRow}>
                         <View style={styles.metaItem}>

@@ -144,7 +144,7 @@ export default function Settings() {
     const fetchStore = async () => {
         try {
             const { data, error } = await supabase
-                .from('restaurants')
+                .from('stores')
                 .select('*')
                 .eq('owner_id', user?.id)
                 .maybeSingle();
@@ -231,7 +231,7 @@ export default function Settings() {
         setIsSaving(true);
         try {
             const { data, error } = await supabase
-                .from('restaurants')
+                .from('stores')
                 .insert({
                     owner_id: user.id,
                     name: 'My Store',
@@ -399,7 +399,7 @@ export default function Settings() {
             }
 
             const { error } = await supabase
-                .from('restaurants')
+                .from('stores')
                 .update({
                     name: store.name,
                     description: store.description,

@@ -39,25 +39,30 @@ export default function Dashboard() {
                 setMerchantName(user.email?.split('@')[0] || 'Merchant');
             }
 
-            // Fetch restaurant for store name, logo, and ID
-            const { data: restaurant } = await supabase
-                .from('restaurants')
+            // Fetch store for store name, logo, and ID
+            const { data: store } = await supabase
+                .from('stores')
                 .select('id, name, image_url')
                 .eq('owner_id', user.id)
                 .maybeSingle();
 
-            if (restaurant) {
-                setStoreName(restaurant.name || 'My Store');
-                setStoreLogo(restaurant.image_url || null);
+            if (store) {
+                setStoreName(store.name || 'My Store');
+                setStoreLogo(store.image_url || null);
+            } else {
+                setStoreName("");
+                setStoreLogo(null);
+            }
 
-                // Fetch today's orders using restaurant_id
+            if (store) {
+                // Fetch today's orders using store_id
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
 
                 const { data: ordersData } = await supabase
                     .from('orders')
                     .select('*')
-                    .eq('restaurant_id', restaurant.id)
+                    .eq('store_id', store.id)
                     .gte('created_at', today.toISOString());
 
                 if (ordersData && ordersData.length > 0) {
@@ -148,6 +153,32 @@ export default function Dashboard() {
 
                 {/* Action Buttons */}
                 <div className="flex items-center gap-3">
+                    {!storeLogo && !storeName && (
+                        <Button
+                            onClick={async () => {
+                                const { data: { user } } = await supabase.auth.getUser();
+                                if (!user) return;
+
+                                const { error } = await supabase.from('stores').insert({
+                                    owner_id: user.id,
+                                    name: merchantName ? `${merchantName}'s Store` : 'My Store',
+                                    is_verified: true,
+                                    is_open: false,
+                                    location: 'POINT(0 0)' // Default location to satisfy constraint
+                                });
+
+                                if (error) {
+                                    alert('Error creating store: ' + error.message);
+                                } else {
+                                    alert('Store created successfully! Please refresh the page.');
+                                    window.location.reload();
+                                }
+                            }}
+                            className="bg-amber-500 hover:bg-amber-600 text-black font-bold animate-pulse"
+                        >
+                            ⚠️ Complete Setup
+                        </Button>
+                    )}
                     <Button
                         variant="outline"
                         onClick={handleExport}

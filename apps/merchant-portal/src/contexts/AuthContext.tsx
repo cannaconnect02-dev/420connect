@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { logError } from '@/lib/error-handler';
 
-type AppRole = 'customer' | 'driver' | 'store_admin' | 'store_staff' | 'admin';
+type AppRole = 'customer' | 'driver' | 'store_admin' | 'store_staff' | 'admin' | 'merchant';
 
 interface UserProfile {
     id: string;
@@ -30,8 +30,10 @@ interface AuthContextType {
     session: Session | null;
     profile: UserProfile | null;
     roles: AppRole[];
+    applicationStatus: 'pending' | 'approved' | 'rejected' | null;
     isLoading: boolean;
     signUp: (email: string, password: string, fullName: string, role?: AppRole, dateOfBirth?: string) => Promise<{ error: Error | null }>;
+    createMerchant: (username: string, password: string, metadata: any) => Promise<{ error: Error | null }>;
     signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
     signOut: () => Promise<void>;
     hasRole: (role: AppRole) => boolean;
@@ -46,13 +48,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [roles, setRoles] = useState<AppRole[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [applicationStatus, setApplicationStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
     const { toast } = useToast();
 
     const fetchProfile = async (userId: string) => {
         const { data, error } = await supabase
             .from('profiles')
             .select('*')
-            .eq('user_id', userId)
+            .eq('id', userId)
             .maybeSingle();
 
         if (error) {
@@ -75,6 +78,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return data.map(r => r.role as AppRole);
     };
 
+    const fetchApplicationStatus = async (userId: string) => {
+        const { data, error } = await supabase
+            .from('role_requests')
+            .select('status')
+            .eq('user_id', userId)
+            .eq('role', 'store_admin')
+            .order('requested_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (error && error.code !== 'PGRST116') {
+            logError('Fetch app status', error);
+        }
+        return data?.status as 'pending' | 'approved' | 'rejected' | null;
+    };
+
     useEffect(() => {
         // Set up auth state listener FIRST
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -85,17 +104,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (currentSession?.user) {
                     // Use setTimeout to avoid potential race conditions
                     setTimeout(async () => {
-                        const [userProfile, userRoles] = await Promise.all([
+                        const [userProfile, userRoles, appStatus] = await Promise.all([
                             fetchProfile(currentSession.user.id),
-                            fetchRoles(currentSession.user.id)
+                            fetchRoles(currentSession.user.id),
+                            fetchApplicationStatus(currentSession.user.id)
                         ]);
                         setProfile(userProfile);
                         setRoles(userRoles);
+                        setApplicationStatus(appStatus);
                         setIsLoading(false);
                     }, 0);
                 } else {
                     setProfile(null);
                     setRoles([]);
+                    setApplicationStatus(null);
                     setIsLoading(false);
                 }
             }
@@ -117,7 +139,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 email,
                 password,
                 options: {
-                    emailRedirectTo: window.location.origin,
                     data: {
                         full_name: fullName,
                         pending_role: role && role !== 'customer' ? role : undefined,
@@ -133,16 +154,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const { error: profileError } = await supabase
                     .from('profiles')
                     .update({ date_of_birth: dateOfBirth })
-                    .eq('user_id', data.user.id);
+                    .eq('id', data.user.id);
 
                 if (profileError) {
                     logError('Update profile DOB', profileError);
                 }
             }
 
-            // Store the pending role request for processing after login
-            if (role && role !== 'customer') {
-                localStorage.setItem('pending_role_request', role);
+            // If it was a merchant signup, we know the status is pending because of the trigger
+            if (role === 'store_admin' || role === 'merchant') {
+                setApplicationStatus('pending');
             }
 
             toast({
@@ -154,6 +175,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             return { error: null };
         } catch (error) {
+            return { error: error as Error };
+        }
+    };
+
+    const createMerchant = async (username: string, password: string, metadata: any) => {
+        try {
+            // Construct dummy email
+            const email = username.includes('@') ? username : `${username}@temp.420connect.local`;
+
+            const { data, error } = await supabase.functions.invoke('create-merchant', {
+                body: {
+                    email,
+                    password,
+                    metadata: {
+                        ...metadata,
+                        email_confirm: true // redundant but good for clarity
+                    }
+                }
+            });
+
+            if (error) throw new Error(error.message || 'Failed to create merchant');
+            if (data?.error) throw new Error(data.error);
+
+            // Auto sign-in after creation (since email is confirmed)
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email,
+                password
+            });
+
+            if (signInError) throw signInError;
+
+            // Update application status
+            setApplicationStatus('pending');
+
+            toast({
+                title: "Account created!",
+                description: "Your merchant account is under review.",
+            });
+
+            return { error: null };
+        } catch (error: any) {
+            logError('Create merchant', error);
             return { error: error as Error };
         }
     };
@@ -174,13 +237,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             const responseData = response.data;
+            // Always refresh status after request
+            const status = await fetchApplicationStatus(user!.id);
+            setApplicationStatus(status);
+
             if (responseData?.status === 'approved') {
-                // Refresh roles
                 const userRoles = await fetchRoles(user!.id);
                 setRoles(userRoles);
                 return { success: true, status: 'approved' };
             } else if (responseData?.status === 'already_assigned') {
-                // Refresh roles to ensure we have latest
                 const userRoles = await fetchRoles(user!.id);
                 setRoles(userRoles);
                 return { success: true, status: 'already_assigned' };
@@ -221,6 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setProfile(null);
         setRoles([]);
+        setApplicationStatus(null);
         toast({
             title: "Signed out",
             description: "You've been signed out successfully.",
@@ -235,8 +301,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             session,
             profile,
             roles,
+            applicationStatus,
             isLoading,
             signUp,
+            createMerchant,
             signIn,
             signOut,
             hasRole,

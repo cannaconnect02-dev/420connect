@@ -60,11 +60,12 @@ export default function HomeScreen() {
     }
 
     async function fetchDataWithDistance(userLat: number | null, userLng: number | null) {
-        // Fetch all active restaurants
+        // Fetch all verified and open stores
         const { data: rData } = await supabase
-            .from('restaurants')
+            .from('stores')
             .select('*')
-            .eq('is_active', true);
+            .eq('is_verified', true)
+            .eq('is_open', true);
 
         if (rData) {
             // Calculate distance and filter within 35km
@@ -86,7 +87,7 @@ export default function HomeScreen() {
                 const { data: mData } = await supabase
                     .from('menu_items')
                     .select('*')
-                    .in('restaurant_id', nearbyIds)
+                    .in('store_id', nearbyIds)
                     .eq('is_available', true)
                     .limit(6);
                 if (mData) setTopPicks(mData);
@@ -96,7 +97,7 @@ export default function HomeScreen() {
 
     async function fetchData() {
         // Fallback without distance filtering
-        const { data: rData } = await supabase.from('restaurants').select('*').eq('is_active', true).limit(5);
+        const { data: rData } = await supabase.from('stores').select('*').eq('is_verified', true).eq('is_open', true).limit(5);
         if (rData) setRestaurants(rData.map(r => ({ ...r, distance: null })));
 
         const { data: mData } = await supabase.from('menu_items').select('*').eq('is_available', true).limit(6);
@@ -198,7 +199,7 @@ export default function HomeScreen() {
                             <TouchableOpacity
                                 key={item.id}
                                 style={styles.productCard}
-                                onPress={() => router.push(`/restaurant/${item.restaurant_id}`)}
+                                onPress={() => router.push(`/restaurant/${item.store_id}`)}
                             >
                                 <View style={styles.productImageContainer}>
                                     <Image

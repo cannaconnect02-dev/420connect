@@ -5,32 +5,32 @@ export interface CartItem {
     name: string;
     price: number;
     quantity: number;
-    restaurantId: string; // To ensure we only order from one restaurant at a time
+    storeId: string; // To ensure we only order from one store at a time
 }
 
 interface CartContextType {
     items: CartItem[];
-    addToCart: (item: any, restaurantId: string) => void;
+    addToCart: (item: any, storeId: string) => void;
     removeFromCart: (itemId: string) => void;
     clearCart: () => void;
     total: number;
-    restaurantId: string | null;
+    storeId: string | null;
 }
 
 const CartContext = createContext<CartContextType>({} as CartContextType);
 
 export function CartProvider({ children }: PropsWithChildren) {
     const [items, setItems] = useState<CartItem[]>([]);
-    const [activeRestaurantId, setActiveRestaurantId] = useState<string | null>(null);
+    const [activeStoreId, setActiveStoreId] = useState<string | null>(null);
 
-    const addToCart = (product: any, restaurantId: string) => {
-        // If ordering from a different restaurant, confirm or clear (for MVP we just auto-clear/warn, here we'll just clear for simplicity)
-        if (activeRestaurantId && activeRestaurantId !== restaurantId) {
-            if (!confirm("Start new cart? You can only order from one restaurant at a time.")) return;
+    const addToCart = (product: any, storeId: string) => {
+        // If ordering from a different store, confirm or clear (for MVP we just auto-clear/warn, here we'll just clear for simplicity)
+        if (activeStoreId && activeStoreId !== storeId) {
+            if (!confirm("Start new cart? You can only order from one store at a time.")) return;
             setItems([]);
-            setActiveRestaurantId(restaurantId);
-        } else if (!activeRestaurantId) {
-            setActiveRestaurantId(restaurantId);
+            setActiveStoreId(storeId);
+        } else if (!activeStoreId) {
+            setActiveStoreId(storeId);
         }
 
         setItems(current => {
@@ -43,7 +43,7 @@ export function CartProvider({ children }: PropsWithChildren) {
                 name: product.name,
                 price: product.price,
                 quantity: 1,
-                restaurantId
+                storeId
             }];
         });
     };
@@ -57,18 +57,18 @@ export function CartProvider({ children }: PropsWithChildren) {
             return current.filter(i => i.id !== itemId);
         });
 
-        if (items.length <= 1) setActiveRestaurantId(null);
+        if (items.length <= 1) setActiveStoreId(null);
     };
 
     const clearCart = () => {
         setItems([]);
-        setActiveRestaurantId(null);
+        setActiveStoreId(null);
     };
 
     const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
     return (
-        <CartContext.Provider value={{ items, addToCart, removeFromCart, clearCart, total, restaurantId: activeRestaurantId }}>
+        <CartContext.Provider value={{ items, addToCart, removeFromCart, clearCart, total, storeId: activeStoreId }}>
             {children}
         </CartContext.Provider>
     );

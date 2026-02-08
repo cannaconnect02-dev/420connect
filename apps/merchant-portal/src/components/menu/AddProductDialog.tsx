@@ -36,21 +36,28 @@ export function AddProductDialog({ onProductAdded }: { onProductAdded: () => voi
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // Get the merchant's restaurant ID first
-        const { data: restaurant } = await supabase
-            .from('restaurants')
+        // Get the merchant's store ID first
+        const { data: store, error: storeError } = await supabase
+            .from('stores')
             .select('id')
             .eq('owner_id', user.id)
             .single();
 
-        if (!restaurant) {
+        if (storeError) {
+            console.error("Error fetching store:", storeError);
+            alert("Error: Could not find your store. Please ensure you have completed the merchant setup.");
+            setLoading(false);
+            return;
+        }
+
+        if (!store) {
             alert("Error: No store found for this merchant account.");
             setLoading(false);
             return;
         }
 
         const { error } = await supabase.from("menu_items").insert({
-            restaurant_id: restaurant.id,
+            store_id: store.id,
             name: formData.name,
             description: formData.description,
             price: parseFloat(formData.price),

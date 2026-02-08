@@ -143,14 +143,14 @@ export function ProductTable() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            // Get the merchant's restaurant ID first
-            const { data: restaurant } = await supabase
-                .from('restaurants')
+            // Get the merchant's store ID first
+            const { data: store } = await supabase
+                .from('stores')
                 .select('id')
                 .eq('owner_id', user.id)
                 .single();
 
-            if (!restaurant) {
+            if (!store) {
                 setLoading(false);
                 return;
             }
@@ -158,7 +158,7 @@ export function ProductTable() {
             const { data } = await supabase
                 .from('menu_items')
                 .select('*')
-                .eq('restaurant_id', restaurant.id)
+                .eq('store_id', store.id)
                 .order('created_at', { ascending: false });
 
             if (data) setData(data);
