@@ -19,11 +19,11 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "dotenv": "^17.2.4"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.91.0",
-    "dotenv": "^17.2.3",
     "pg": "^8.18.0"
   }
 }

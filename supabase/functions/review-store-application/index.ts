@@ -82,29 +82,19 @@ Deno.serve(async (req) => {
                 console.error('Error updating profile role:', profileError)
             }
 
-            // Create the Store Record
-            // We need to check if it exists first to avoid duplicates
-            const { data: existingStore } = await supabaseClient
+            // Update the Store Record
+            const { error: updateStoreError } = await supabaseClient
                 .from('stores')
-                .select('id')
+                .update({
+                    is_verified: true,
+                    is_active: true, // Optional: auto-activate or let merchant do it
+                    is_open: false // Keep closed until they open it
+                })
                 .eq('owner_id', request.user_id)
-                .single()
 
-            if (!existingStore) {
-                const { error: createStoreError } = await supabaseClient
-                    .from('stores')
-                    .insert({
-                        owner_id: request.user_id,
-                        name: profile?.store_name || 'New Store',
-                        is_verified: true,
-                        is_open: false,
-                        // location is now nullable, so we can omit it or likely defaulted
-                    })
-
-                if (createStoreError) {
-                    console.error('Error creating store record:', createStoreError)
-                    throw new Error(`Failed to create store record: ${createStoreError.message}`)
-                }
+            if (updateStoreError) {
+                console.error('Error updating store record:', updateStoreError)
+                throw new Error(`Failed to update store record: ${updateStoreError.message}`)
             }
         }
 

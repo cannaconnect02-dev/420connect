@@ -24,6 +24,7 @@ const mockSupabase = {
         getUser: jest.fn(),
         onAuthStateChange: jest.fn(() => ({ data: { subscription: { unsubscribe: jest.fn() } } })),
         signOut: jest.fn(),
+        refreshSession: jest.fn(),
     },
     from: jest.fn(() => createSupabaseMock()),
 };
@@ -69,6 +70,8 @@ jest.mock('lucide-react-native', () => ({
     CreditCard: 'CreditCard',
     LogOut: 'LogOut',
     Edit2: 'Edit2',
+    Phone: 'Phone',
+    RefreshCw: 'RefreshCw',
 }));
 
 // Mock DateTimePicker

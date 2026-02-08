@@ -6,20 +6,9 @@ import { Search, MapPin, Star, Clock, Plus, Filter } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const MAX_DISTANCE_KM = 35;
+import { getDistanceFromLatLonInKm } from '../../lib/utils';
 
-// Haversine formula for distance calculation
-function calculateDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    const toRad = (deg: number) => deg * (Math.PI / 180);
-    const R = 6371; // Earth's radius in km
-    const dLat = toRad(lat2 - lat1);
-    const dLng = toRad(lng2 - lng1);
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-        Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-}
+const MAX_DISTANCE_KM = 35;
 
 export default function HomeScreen() {
     const router = useRouter();
@@ -73,7 +62,7 @@ export default function HomeScreen() {
                 .map(r => ({
                     ...r,
                     distance: r.latitude && r.longitude
-                        ? calculateDistanceKm(userLat, userLng, r.latitude, r.longitude)
+                        ? getDistanceFromLatLonInKm(userLat, userLng, r.latitude, r.longitude)
                         : null
                 }))
                 .filter(r => r.distance === null || r.distance <= MAX_DISTANCE_KM)

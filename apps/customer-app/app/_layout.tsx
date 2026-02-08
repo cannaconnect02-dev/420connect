@@ -110,9 +110,16 @@ export default function RootLayout() {
                     router.replace('/phone-entry');
                 }
             }
-            // 2. Phone Verified - Send to Main App (address confirmation step removed)
-            else if (inAuthGroup || isOnboardingRoute) {
-                console.log('NAV: Phone Verified - Redirecting to Main Tabs');
+            // 2. Address Confirmation Check
+            else if (phoneVerified === true && addressConfirmed === false) {
+                if (!inAddressConfirmation) {
+                    console.log('NAV: Phone Verified - Redirecting to Address Confirmation');
+                    router.replace('/address-confirmation');
+                }
+            }
+            // 3. All Verified - Send to Main App
+            else if (phoneVerified === true && addressConfirmed === true && (isPublicRoute || isOnboardingRoute)) {
+                console.log('NAV: All Verified - Redirecting to Main Tabs');
                 router.replace('/(tabs)/');
             }
         }

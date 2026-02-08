@@ -39,10 +39,12 @@ Deno.serve(async (req) => {
             // 1. Create Profile
             const { error: profileError } = await supabaseAdmin
                 .from('profiles')
-                .insert({
+                .upsert({
                     id: data.user.id,
                     role: 'merchant',
-                    full_name: metadata.full_name,
+                    full_name: `${metadata.first_name} ${metadata.surname}`,
+                    first_name: metadata.first_name,
+                    surname: metadata.surname,
                     store_name: metadata.store_name
                 })
                 .select() // return data to ensure completion
@@ -51,7 +53,36 @@ Deno.serve(async (req) => {
                 console.error('Error creating profile:', profileError)
             }
 
-            // 2. Create Role Request
+            // 2. Create Store
+            // We expect the store details to be passed in metadata
+            if (metadata.store_name) {
+                console.log('Creating store with metadata:', JSON.stringify(metadata, null, 2))
+
+                const { error: storeError } = await supabaseAdmin
+                    .from('stores')
+                    .insert({
+                        owner_id: data.user.id,
+                        name: metadata.store_name,
+                        address: metadata.address,
+                        latitude: metadata.latitude,
+                        longitude: metadata.longitude,
+                        is_active: false,
+                        is_open: false,
+                        registration_number: metadata.registration_number,
+                        document_url: metadata.document_url,
+                        is_verified: false
+                    })
+
+                if (storeError) {
+                    console.error('Error creating store:', storeError)
+                    // THROW the error so the client knows it failed!
+                    throw new Error(`Failed to create store: ${storeError.message}`)
+                }
+            } else {
+                console.warn('Metadata missing store_name, skipping store creation')
+            }
+
+            // 3. Create Role Request
             const { error: requestError } = await supabaseAdmin
                 .from('role_requests')
                 .insert({

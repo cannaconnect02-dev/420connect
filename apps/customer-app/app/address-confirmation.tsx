@@ -9,8 +9,9 @@ import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { MapPin, Navigation, CheckCircle } from 'lucide-react-native';
 import { NanoTheme } from '../constants/nanobanana';
 import * as Location from 'expo-location';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete'; // DIRECT IMPORT
 
-import { useRegistration } from '../lib/RegistrationContext';
+const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 export default function AddressConfirmationScreen() {
     const router = useRouter();
@@ -24,19 +25,25 @@ export default function AddressConfirmationScreen() {
     const [postalCode, setPostalCode] = useState('');
     const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
 
-    // Check if user already has confirmed address
+    // Initial check logic...
     useEffect(() => {
+        console.log('AddressConfirmationScreen mounted');
+        console.log('Google Maps API Key Loaded:', !!GOOGLE_PLACES_API_KEY);
+        if (GOOGLE_PLACES_API_KEY) {
+            console.log('Key prefix:', GOOGLE_PLACES_API_KEY.substring(0, 5) + '...');
+        } else {
+            console.error('CRITICAL: GOOGLE_PLACES_API_KEY is missing!');
+        }
+
         if (params.editing !== 'true') {
             checkExistingAddress();
         } else {
-            // Pre-fill data if editing
             loadExistingAddress();
         }
     }, [params.editing]);
 
     async function loadExistingAddress() {
         try {
-            // ... logic to load existing address to pre-fill the form
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
@@ -58,26 +65,13 @@ export default function AddressConfirmationScreen() {
     }
 
     async function checkExistingAddress() {
+        // ... (Keep existing check logic)
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
-
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('address_confirmed')
-            .eq('id', user.id)
-            .single();
-
+        const { data: profile } = await supabase.from('profiles').select('address_confirmed').eq('id', user.id).single();
         if (profile?.address_confirmed) {
-            // Optional: Check if real address exists
-            const { data: addressData } = await supabase
-                .from('user_addresses')
-                .select('id')
-                .eq('user_id', user.id)
-                .limit(1);
-
-            if (addressData && addressData.length > 0) {
-                router.replace('/(tabs)');
-            }
+            const { data: addressData } = await supabase.from('user_addresses').select('id').eq('user_id', user.id).limit(1);
+            if (addressData && addressData.length > 0) router.replace('/(tabs)');
         }
     }
 
@@ -94,10 +88,9 @@ export default function AddressConfirmationScreen() {
             const { latitude, longitude } = location.coords;
             setCoordinates({ lat: latitude, lng: longitude });
 
-            // Reverse geocode to get address
             const [result] = await Location.reverseGeocodeAsync({ latitude, longitude });
             if (result) {
-                setAddress(result.street || result.name || '');
+                setAddress(`${result.streetNumber || ''} ${result.street || ''}`.trim() || result.name || '');
                 setSuburb(result.district || result.subregion || '');
                 setCity(result.city || result.region || '');
                 setPostalCode(result.postalCode || '');
@@ -111,51 +104,61 @@ export default function AddressConfirmationScreen() {
         }
     }
 
-    async function geocodeAddress(): Promise<{ lat: number; lng: number } | null> {
-        const fullAddress = `${address}, ${suburb}, ${city}, ${postalCode}`;
-        try {
-            const results = await Location.geocodeAsync(fullAddress);
-            if (results.length > 0) {
-                return { lat: results[0].latitude, lng: results[0].longitude };
+    // Handle Google Places Selection
+    const handlePlaceSelected = (data: any, details: any = null) => {
+        if (details) {
+            const { geometry, address_components, formatted_address } = details;
+
+            // 1. Set Coordinates
+            if (geometry && geometry.location) {
+                setCoordinates({
+                    lat: geometry.location.lat,
+                    lng: geometry.location.lng
+                });
             }
-        } catch (error) {
-            console.log('Geocoding error:', error);
+
+            // 2. Parse Address Components
+            let streetNumber = '';
+            let route = '';
+            let sub = '';
+            let cty = '';
+            let pcode = '';
+
+            address_components.forEach((component: any) => {
+                const types = component.types;
+                if (types.includes('street_number')) streetNumber = component.long_name;
+                if (types.includes('route')) route = component.long_name;
+                if (types.includes('sublocality') || types.includes('neighborhood')) sub = component.long_name;
+                if (types.includes('locality') || types.includes('administrative_area_level_2')) cty = component.long_name;
+                if (types.includes('postal_code')) pcode = component.long_name;
+            });
+
+            setAddress(`${streetNumber} ${route}`.trim() || formatted_address.split(',')[0]);
+            setSuburb(sub);
+            setCity(cty);
+            setPostalCode(pcode);
         }
-        return null;
-    }
+    };
 
     async function confirmAddress() {
         if (!address.trim() || !city.trim()) {
             Alert.alert('Error', 'Please enter at least your street address and city.');
             return;
         }
+        if (!coordinates) {
+            Alert.alert('Location Required', 'Please ensure your location is verified (select from dropdown or use current location).');
+            return;
+        }
 
         setLoading(true);
         try {
-            let coords = coordinates;
-
-            // If no coordinates yet, try to geocode
-            if (!coords) {
-                coords = await geocodeAddress();
-                if (!coords) {
-                    Alert.alert('Error', 'Could not verify your address location. Please try using "Use Current Location" or enter a more specific address.');
-                    setLoading(false);
-                    return;
-                }
-            }
-
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error('Not authenticated');
 
-            // 1. Unset any existing default addresses for this user
-            const { error: updateError } = await supabase
-                .from('user_addresses')
-                .update({ is_default: false })
-                .eq('user_id', user.id);
+            // 1. Unset any existing default addresses
+            await supabase.from('user_addresses').update({ is_default: false }).eq('user_id', user.id);
 
-            if (updateError) throw updateError;
-
-            // 2. Insert into user_addresses
+            // 2. Insert new address
             const { error: addressError } = await supabase
                 .from('user_addresses')
                 .insert({
@@ -164,33 +167,22 @@ export default function AddressConfirmationScreen() {
                     suburb: suburb,
                     city: city,
                     postal_code: postalCode,
-                    lat: coords.lat,
-                    lng: coords.lng,
+                    lat: coordinates.lat,
+                    lng: coordinates.lng,
                     is_default: true
                 });
 
             if (addressError) throw addressError;
 
-            // 3. EXPLICITLY update profiles confirmed status
-            const { error: profileError } = await supabase
-                .from('profiles')
-                .update({ address_confirmed: true })
-                .eq('id', user.id);
-
-            if (profileError) throw profileError;
-            console.log('Profile updated: address_confirmed = true');
-
-            // Refresh session to update global address_confirmed state in _layout
+            // 3. Update profile
+            await supabase.from('profiles').update({ address_confirmed: true }).eq('id', user.id);
             await supabase.auth.refreshSession();
 
-            // Navigate immediately
+            // Navigate
             if (params.editing === 'true') {
-                if (router.canGoBack()) {
-                    router.back();
-                } else {
-                    router.replace('/(tabs)/profile');
-                }
+                router.canGoBack() ? router.back() : router.replace('/(tabs)/profile');
             } else {
+                // Default flow: Go to main tabs
                 router.replace('/(tabs)');
             }
         } catch (error: any) {
@@ -238,30 +230,67 @@ export default function AddressConfirmationScreen() {
 
                         <View style={styles.divider}>
                             <View style={styles.dividerLine} />
-                            <Text style={styles.dividerText}>or enter manually</Text>
+                            <Text style={styles.dividerText}>or search address</Text>
                             <View style={styles.dividerLine} />
                         </View>
 
-                        <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Street Address *</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="123 Main Street"
-                                placeholderTextColor={NanoTheme.colors.textSecondary}
-                                value={address}
-                                onChangeText={setAddress}
-                            />
+                        {/* Google Places Autocomplete Section */}
+                        <View style={[styles.inputContainer, { zIndex: 1000 }]}>
+                            <Text style={styles.label}>Search Address</Text>
+                            {/* Removed fixed height to allow list to grow */}
+                            <View style={{ flex: 1 }}>
+                                <GooglePlacesAutocomplete
+                                    placeholder='Start typing address...'
+                                    onPress={handlePlaceSelected}
+                                    query={{
+                                        key: GOOGLE_PLACES_API_KEY,
+                                        language: 'en',
+                                        components: 'country:za',
+                                    }}
+                                    fetchDetails={true}
+                                    onFail={(error) => console.error('Google Places Error:', error)}
+                                    onNotFound={() => console.log('Google Places: No results found')}
+                                    styles={{
+                                        textInput: styles.placesInput,
+                                        listView: {
+                                            ...styles.listView,
+                                            position: 'absolute', // Float over other content
+                                            top: 50, // Below input
+                                            left: 0,
+                                            right: 0,
+                                            zIndex: 9999, // Ensure on top
+                                            elevation: 5, // Android shadow/elevation
+                                        },
+                                        description: { color: 'white' },
+                                        row: { backgroundColor: NanoTheme.colors.backgroundAlt },
+                                        separator: { backgroundColor: '#333' },
+                                        container: { flex: 0 }, // Prevent taking full screen height
+                                    }}
+                                    textInputProps={{
+                                        placeholderTextColor: NanoTheme.colors.textSecondary,
+                                        value: address, // Controlled input
+                                        onChangeText: (text) => {
+                                            setAddress(text);
+                                            console.log('Searching for:', text);
+                                        },
+                                    }}
+                                    enablePoweredByContainer={false}
+                                />
+                            </View>
                         </View>
 
-                        <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Suburb / Area</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Claremont"
-                                placeholderTextColor={NanoTheme.colors.textSecondary}
-                                value={suburb}
-                                onChangeText={setSuburb}
-                            />
+                        {/* Manual Overrides / Display */}
+                        <View style={styles.row}>
+                            <View style={[styles.inputContainer, { flex: 2 }]}>
+                                <Text style={styles.label}>Suburb</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="Suburb"
+                                    placeholderTextColor={NanoTheme.colors.textSecondary}
+                                    value={suburb}
+                                    onChangeText={setSuburb}
+                                />
+                            </View>
                         </View>
 
                         <View style={styles.row}>
@@ -269,7 +298,7 @@ export default function AddressConfirmationScreen() {
                                 <Text style={styles.label}>City *</Text>
                                 <TextInput
                                     style={styles.input}
-                                    placeholder="Cape Town"
+                                    placeholder="City"
                                     placeholderTextColor={NanoTheme.colors.textSecondary}
                                     value={city}
                                     onChangeText={setCity}
@@ -279,7 +308,7 @@ export default function AddressConfirmationScreen() {
                                 <Text style={styles.label}>Postal Code</Text>
                                 <TextInput
                                     style={styles.input}
-                                    placeholder="7708"
+                                    placeholder="Code"
                                     placeholderTextColor={NanoTheme.colors.textSecondary}
                                     value={postalCode}
                                     onChangeText={setPostalCode}
@@ -292,7 +321,7 @@ export default function AddressConfirmationScreen() {
                             <View style={styles.coordinatesInfo}>
                                 <CheckCircle size={16} color={NanoTheme.colors.primary} />
                                 <Text style={styles.coordinatesText}>
-                                    Location verified
+                                    Location verified (Lat: {coordinates.lat.toFixed(4)}, Lng: {coordinates.lng.toFixed(4)})
                                 </Text>
                             </View>
                         )}
@@ -406,6 +435,22 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         color: 'white',
         fontSize: 16,
+        borderWidth: 1,
+        borderColor: '#333',
+    },
+    placesInput: {
+        backgroundColor: NanoTheme.colors.background,
+        padding: 12,
+        borderRadius: 12,
+        color: 'white',
+        fontSize: 16,
+        borderWidth: 1,
+        borderColor: '#333',
+    },
+    listView: {
+        backgroundColor: NanoTheme.colors.backgroundAlt,
+        marginTop: 8,
+        borderRadius: 12,
         borderWidth: 1,
         borderColor: '#333',
     },

@@ -181,8 +181,8 @@ export default function PhoneVerificationScreen() {
             Alert.alert('Success', 'Phone number verified successfully!', [
                 {
                     text: 'Continue', onPress: () => {
-                        console.log('Navigating to main tabs...');
-                        router.replace('/(tabs)/');
+                        console.log('Navigating to address confirmation...');
+                        router.replace('/address-confirmation');
                     }
                 }
             ]);
@@ -268,6 +268,7 @@ export default function PhoneVerificationScreen() {
                             maxLength={1}
                             selectTextOnFocus
                             autoFocus={index === 0}
+                            testID={`otp-input-${index}`}
                         />
                     ))}
                 </View>
