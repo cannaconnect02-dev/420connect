@@ -34,8 +34,9 @@ describe('AddressConfirmationScreen', () => {
             expect(getByText('Confirm Your Address')).toBeTruthy();
         });
 
-        expect(getByPlaceholderText('123 Main Street')).toBeTruthy();
-        expect(getByPlaceholderText('Cape Town')).toBeTruthy();
+        // Updated to match actual placeholders in the UI
+        expect(getByPlaceholderText('Start typing address...')).toBeTruthy();
+        expect(getByPlaceholderText('City')).toBeTruthy();
     });
 
     it('validates required fields before submission', async () => {

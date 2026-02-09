@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,12 +6,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, Upload, X, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export function AddProductDialog({ onProductAdded }: { onProductAdded: () => void }) {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [formData, setFormData] = useState({
         name: "",
         description: "",
@@ -29,66 +32,131 @@ export function AddProductDialog({ onProductAdded }: { onProductAdded: () => voi
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                alert('Please select an image file');
+                return;
+            }
+            // Validate file size (max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Image must be less than 5MB');
+                return;
+            }
+            setImageFile(file);
+            setImagePreview(URL.createObjectURL(file));
+        }
+    };
+
+    const removeImage = () => {
+        setImageFile(null);
+        if (imagePreview) {
+            URL.revokeObjectURL(imagePreview);
+            setImagePreview(null);
+        }
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    const uploadImage = async (storeId: string): Promise<string | null> => {
+        if (!imageFile) return null;
+
+        const fileExt = imageFile.name.split('.').pop();
+        const fileName = `${storeId}/${Date.now()}.${fileExt}`;
+
+        const { data, error } = await supabase.storage
+            .from('product-images')
+            .upload(fileName, imageFile, {
+                cacheControl: '3600',
+                upsert: false
+            });
+
+        if (error) {
+            console.error('Error uploading image:', error);
+            throw new Error('Failed to upload image');
+        }
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+            .from('product-images')
+            .getPublicUrl(data.path);
+
+        return publicUrl;
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
 
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                alert("Error: Not authenticated");
+                setLoading(false);
+                return;
+            }
 
-        // Get the merchant's store ID first
-        const { data: store, error: storeError } = await supabase
-            .from('stores')
-            .select('id')
-            .eq('owner_id', user.id)
-            .single();
+            // Get the merchant's store ID first
+            const { data: store, error: storeError } = await supabase
+                .from('stores')
+                .select('id')
+                .eq('owner_id', user.id)
+                .single();
 
-        if (storeError) {
-            console.error("Error fetching store:", storeError);
-            alert("Error: Could not find your store. Please ensure you have completed the merchant setup.");
-            setLoading(false);
-            return;
-        }
+            if (storeError || !store) {
+                console.error("Error fetching store:", storeError);
+                alert("Error: Could not find your store. Please ensure you have completed the merchant setup.");
+                setLoading(false);
+                return;
+            }
 
-        if (!store) {
-            alert("Error: No store found for this merchant account.");
-            setLoading(false);
-            return;
-        }
+            // Upload image if provided
+            let imageUrl: string | null = null;
+            if (imageFile) {
+                imageUrl = await uploadImage(store.id);
+            }
 
-        const { error } = await supabase.from("menu_items").insert({
-            store_id: store.id,
-            name: formData.name,
-            description: formData.description,
-            price: parseFloat(formData.price),
-            category: formData.category,
-            stock_quantity: parseInt(formData.stock_quantity),
-            unit: formData.unit,
-            thc_percentage: parseFloat(formData.thc_percentage) || 0,
-            cbd_percentage: parseFloat(formData.cbd_percentage) || 0,
-            strain_type: formData.strain_type,
-            is_available: formData.is_available,
-            image_url: null // Placeholder
-        });
-
-        setLoading(false);
-        if (!error) {
-            setOpen(false);
-            setFormData({
-                name: "",
-                description: "",
-                price: "",
-                category: "flower",
-                stock_quantity: "",
-                unit: "g",
-                thc_percentage: "",
-                cbd_percentage: "",
-                strain_type: "hybrid",
-                is_available: true
+            const { error } = await supabase.from("menu_items").insert({
+                store_id: store.id,
+                name: formData.name,
+                description: formData.description,
+                price: parseFloat(formData.price),
+                category: formData.category,
+                stock_quantity: parseInt(formData.stock_quantity),
+                unit: formData.unit,
+                thc_percentage: parseFloat(formData.thc_percentage) || 0,
+                cbd_percentage: parseFloat(formData.cbd_percentage) || 0,
+                strain_type: formData.strain_type,
+                is_available: formData.is_available,
+                image_url: imageUrl
             });
-            onProductAdded();
-        } else {
-            alert("Error adding product: " + error.message);
+
+            if (!error) {
+                setOpen(false);
+                setFormData({
+                    name: "",
+                    description: "",
+                    price: "",
+                    category: "flower",
+                    stock_quantity: "",
+                    unit: "g",
+                    thc_percentage: "",
+                    cbd_percentage: "",
+                    strain_type: "hybrid",
+                    is_available: true
+                });
+                removeImage();
+                onProductAdded();
+            } else {
+                alert("Error adding product: " + error.message);
+            }
+        } catch (err: any) {
+            alert("Error: " + err.message);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -105,6 +173,56 @@ export function AddProductDialog({ onProductAdded }: { onProductAdded: () => voi
                     <DialogTitle>Add New Product</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="grid gap-4 py-4">
+                    {/* Image Upload Section */}
+                    <div className="grid gap-2">
+                        <Label>Product Image</Label>
+                        <div className="flex items-center gap-4">
+                            {imagePreview ? (
+                                <div className="relative">
+                                    <img
+                                        src={imagePreview}
+                                        alt="Preview"
+                                        className="w-24 h-24 object-cover rounded-lg border border-white/10"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={removeImage}
+                                        className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-400 text-white rounded-full p-1"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="w-24 h-24 border-2 border-dashed border-white/20 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-green-500 transition-colors"
+                                >
+                                    <ImageIcon size={24} className="text-white/40" />
+                                    <span className="text-xs text-white/40 mt-1">Add Image</span>
+                                </div>
+                            )}
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleImageChange}
+                                className="hidden"
+                            />
+                            {!imagePreview && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="border-white/10 text-white hover:bg-white/10"
+                                >
+                                    <Upload size={16} className="mr-2" />
+                                    Choose File
+                                </Button>
+                            )}
+                        </div>
+                        <p className="text-xs text-slate-400">Max 5MB. JPG, PNG, or WebP recommended.</p>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
                             <Label htmlFor="name">Product Name</Label>

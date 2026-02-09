@@ -1,22 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     StyleSheet, View, Text, TextInput, TouchableOpacity,
-    Alert, KeyboardAvoidingView, Platform, ScrollView, StatusBar,
+    Alert, KeyboardAvoidingView, Platform, FlatList, StatusBar,
     ActivityIndicator
 } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
-import { MapPin, Navigation, CheckCircle } from 'lucide-react-native';
+import { Stack, useRouter } from 'expo-router';
+import { MapPin, Navigation, CheckCircle, ArrowLeft } from 'lucide-react-native';
 import { NanoTheme } from '../constants/nanobanana';
 import * as Location from 'expo-location';
-import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete'; // DIRECT IMPORT
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 
 const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-export default function AddressConfirmationScreen() {
+export default function DeliveryAddressEditScreen() {
     const router = useRouter();
-    const params = useLocalSearchParams();
-
     const [loading, setLoading] = useState(false);
     const [gettingLocation, setGettingLocation] = useState(false);
     const [address, setAddress] = useState('');
@@ -27,24 +25,11 @@ export default function AddressConfirmationScreen() {
 
     const placesRef = useRef<any>(null);
 
-    // Initial check logic...
     useEffect(() => {
-        console.log('AddressConfirmationScreen mounted');
-        console.log('Google Maps API Key Loaded:', !!GOOGLE_PLACES_API_KEY);
-        if (GOOGLE_PLACES_API_KEY) {
-            console.log('Key prefix:', GOOGLE_PLACES_API_KEY.substring(0, 5) + '...');
-        } else {
-            console.error('CRITICAL: GOOGLE_PLACES_API_KEY is missing!');
-        }
+        loadCurrentAddress();
+    }, []);
 
-        if (params.editing === 'true' || params.returnUrl) {
-            loadExistingAddress();
-        } else {
-            checkExistingAddress();
-        }
-    }, [params.editing, params.returnUrl]);
-
-    async function loadExistingAddress() {
+    async function loadCurrentAddress() {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
@@ -66,17 +51,8 @@ export default function AddressConfirmationScreen() {
                 setPostalCode(addressData.postal_code || '');
                 setCoordinates({ lat: addressData.lat, lng: addressData.lng });
             }
-        } catch (e) { console.log("Error loading address", e) }
-    }
-
-    async function checkExistingAddress() {
-        // ... (Keep existing check logic)
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const { data: profile } = await supabase.from('profiles').select('address_confirmed').eq('id', user.id).single();
-        if (profile?.address_confirmed) {
-            const { data: addressData } = await supabase.from('user_addresses').select('id').eq('user_id', user.id).limit(1);
-            if (addressData && addressData.length > 0) router.replace('/(tabs)');
+        } catch (e) {
+            console.log("Error loading address", e);
         }
     }
 
@@ -95,7 +71,11 @@ export default function AddressConfirmationScreen() {
 
             const [result] = await Location.reverseGeocodeAsync({ latitude, longitude });
             if (result) {
-                setAddress(`${result.streetNumber || ''} ${result.street || ''}`.trim() || result.name || '');
+                const newAddress = `${result.streetNumber || ''} ${result.street || ''}`.trim() || result.name || '';
+                setAddress(newAddress);
+                if (placesRef.current) {
+                    placesRef.current.setAddressText(newAddress);
+                }
                 setSuburb(result.district || result.subregion || '');
                 setCity(result.city || result.region || '');
                 setPostalCode(result.postalCode || '');
@@ -109,12 +89,10 @@ export default function AddressConfirmationScreen() {
         }
     }
 
-    // Handle Google Places Selection
     const handlePlaceSelected = (data: any, details: any = null) => {
         if (details) {
             const { geometry, address_components, formatted_address } = details;
 
-            // 1. Set Coordinates
             if (geometry && geometry.location) {
                 setCoordinates({
                     lat: geometry.location.lat,
@@ -122,7 +100,6 @@ export default function AddressConfirmationScreen() {
                 });
             }
 
-            // 2. Parse Address Components
             let streetNumber = '';
             let route = '';
             let sub = '';
@@ -138,14 +115,15 @@ export default function AddressConfirmationScreen() {
                 if (types.includes('postal_code')) pcode = component.long_name;
             });
 
-            setAddress(`${streetNumber} ${route}`.trim() || formatted_address.split(',')[0]);
+            const newAddress = `${streetNumber} ${route}`.trim() || formatted_address.split(',')[0];
+            setAddress(newAddress);
             setSuburb(sub);
             setCity(cty);
             setPostalCode(pcode);
         }
     };
 
-    async function confirmAddress() {
+    async function saveAddress() {
         if (!address.trim() || !city.trim()) {
             Alert.alert('Error', 'Please enter at least your street address and city.');
             return;
@@ -181,17 +159,10 @@ export default function AddressConfirmationScreen() {
 
             // 3. Update profile
             await supabase.from('profiles').update({ address_confirmed: true }).eq('id', user.id);
-            await supabase.auth.refreshSession();
 
-            // Navigate
-            if (params.returnUrl) {
-                router.replace(params.returnUrl as string);
-            } else if (params.editing === 'true') {
-                router.canGoBack() ? router.back() : router.replace('/(tabs)/profile');
-            } else {
-                // Default flow: Go to main tabs
-                router.replace('/(tabs)');
-            }
+            Alert.alert("Success", "Delivery address updated!");
+            router.back();
+
         } catch (error: any) {
             Alert.alert('Error', error.message || 'Failed to save address');
         } finally {
@@ -207,18 +178,20 @@ export default function AddressConfirmationScreen() {
             <StatusBar barStyle="light-content" backgroundColor={NanoTheme.colors.background} />
             <Stack.Screen options={{ headerShown: false }} />
 
-            <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-                <View style={styles.content}>
-                    <View style={styles.header}>
-                        <View style={styles.iconCircle}>
-                            <MapPin size={40} color={NanoTheme.colors.primary} />
-                        </View>
-                        <Text style={styles.title}>Confirm Your Address</Text>
-                        <Text style={styles.subtitle}>
-                            We need your delivery address to show stores within 35km
-                        </Text>
-                    </View>
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <ArrowLeft size={24} color="white" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Edit Delivery Address</Text>
+                <View style={{ width: 44 }} />
+            </View>
 
+            <FlatList
+                data={[]}
+                renderItem={null}
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="always"
+                ListHeaderComponent={
                     <View style={styles.card}>
                         <TouchableOpacity
                             style={styles.locationButton}
@@ -241,10 +214,8 @@ export default function AddressConfirmationScreen() {
                             <View style={styles.dividerLine} />
                         </View>
 
-                        {/* Google Places Autocomplete Section */}
                         <View style={[styles.inputContainer, { zIndex: 1000 }]}>
                             <Text style={styles.label}>Search Address</Text>
-                            {/* Removed fixed height to allow list to grow */}
                             <View style={{ flex: 1 }}>
                                 <GooglePlacesAutocomplete
                                     ref={placesRef}
@@ -257,37 +228,35 @@ export default function AddressConfirmationScreen() {
                                     }}
                                     fetchDetails={true}
                                     onFail={(error) => console.error('Google Places Error:', error)}
-                                    onNotFound={() => console.log('Google Places: No results found')}
                                     styles={{
                                         textInput: styles.placesInput,
                                         listView: {
                                             ...styles.listView,
-                                            position: 'absolute', // Float over other content
-                                            top: 50, // Below input
+                                            position: 'absolute',
+                                            top: 50,
                                             left: 0,
                                             right: 0,
-                                            zIndex: 9999, // Ensure on top
-                                            elevation: 5, // Android shadow/elevation
+                                            zIndex: 9999,
+                                            elevation: 5,
                                         },
                                         description: { color: 'white' },
                                         row: { backgroundColor: NanoTheme.colors.backgroundAlt },
                                         separator: { backgroundColor: '#333' },
-                                        container: { flex: 0 }, // Prevent taking full screen height
+                                        container: { flex: 0 },
                                     }}
                                     textInputProps={{
                                         placeholderTextColor: NanoTheme.colors.textSecondary,
-                                        value: address, // Controlled input
-                                        onChangeText: (text) => {
-                                            setAddress(text);
-                                            console.log('Searching for:', text);
-                                        },
+                                        value: address,
+                                        onChangeText: (text) => setAddress(text),
+                                    }}
+                                    listProps={{
+                                        nestedScrollEnabled: true,
                                     }}
                                     enablePoweredByContainer={false}
                                 />
                             </View>
                         </View>
 
-                        {/* Manual Overrides / Display */}
                         <View style={styles.row}>
                             <View style={[styles.inputContainer, { flex: 2 }]}>
                                 <Text style={styles.label}>Suburb</Text>
@@ -336,16 +305,16 @@ export default function AddressConfirmationScreen() {
 
                         <TouchableOpacity
                             style={styles.primaryButton}
-                            onPress={confirmAddress}
+                            onPress={saveAddress}
                             disabled={loading}
                         >
                             <Text style={styles.buttonText}>
-                                {loading ? 'Saving...' : 'Confirm Address'}
+                                {loading ? 'Saving...' : 'Update Address'}
                             </Text>
                         </TouchableOpacity>
                     </View>
-                </View>
-            </ScrollView>
+                }
+            />
         </KeyboardAvoidingView>
     );
 }
@@ -355,40 +324,30 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: NanoTheme.colors.background,
     },
-    scrollContent: {
-        flexGrow: 1,
-    },
-    content: {
-        flex: 1,
-        padding: 24,
-        paddingTop: 60,
-    },
     header: {
+        flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 32,
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingTop: 60,
+        paddingBottom: 20,
     },
-    iconCircle: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: NanoTheme.colors.primaryDim,
+    backButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(0, 255, 0, 0.2)',
     },
-    title: {
-        fontSize: 28,
+    headerTitle: {
+        fontSize: 20,
         fontWeight: 'bold',
-        color: NanoTheme.colors.text,
-        textAlign: 'center',
+        color: 'white',
     },
-    subtitle: {
-        fontSize: 16,
-        color: NanoTheme.colors.textSecondary,
-        marginTop: 8,
-        textAlign: 'center',
+    scrollContent: {
+        paddingHorizontal: 20,
+        paddingBottom: 40,
     },
     card: {
         backgroundColor: NanoTheme.colors.backgroundAlt,
@@ -486,8 +445,8 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     buttonText: {
-        color: 'black',
+        color: 'white',
         fontWeight: 'bold',
-        fontSize: 18,
+        fontSize: 16,
     },
 });

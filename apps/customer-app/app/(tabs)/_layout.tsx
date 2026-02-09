@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, List, User } from 'lucide-react-native';
+import { Home, Package, User } from 'lucide-react-native';
 
 export default function TabLayout() {
     return (
@@ -21,10 +21,10 @@ export default function TabLayout() {
                 }}
             />
             <Tabs.Screen
-                name="orders"
+                name="track"
                 options={{
-                    title: 'Orders',
-                    tabBarIcon: ({ color }) => <List color={color} size={24} />,
+                    title: 'Track',
+                    tabBarIcon: ({ color }) => <Package color={color} size={24} />,
                 }}
             />
             <Tabs.Screen
@@ -32,6 +32,12 @@ export default function TabLayout() {
                 options={{
                     title: 'Profile',
                     tabBarIcon: ({ color }) => <User color={color} size={24} />,
+                }}
+            />
+            <Tabs.Screen
+                name="orders"
+                options={{
+                    href: null, // Hide from tab bar but keep accessible
                 }}
             />
         </Tabs>

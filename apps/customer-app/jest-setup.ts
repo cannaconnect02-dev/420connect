@@ -41,6 +41,7 @@ jest.mock('expo-router', () => ({
         back: jest.fn(),
     })),
     useLocalSearchParams: jest.fn(() => ({})),
+    useSegments: jest.fn(() => []),
     Stack: {
         Screen: jest.fn(() => null),
     },
@@ -67,12 +68,43 @@ jest.mock('lucide-react-native', () => ({
     MapPin: 'MapPin',
     Navigation: 'Navigation',
     CheckCircle: 'CheckCircle',
+    CheckCircle2: 'CheckCircle2',
     CreditCard: 'CreditCard',
     LogOut: 'LogOut',
     Edit2: 'Edit2',
     Phone: 'Phone',
     RefreshCw: 'RefreshCw',
+    Search: 'Search',
+    Star: 'Star',
+    Clock: 'Clock',
+    Plus: 'Plus',
+    Minus: 'Minus',
+    Filter: 'Filter',
+    Trash2: 'Trash2',
+    ChevronRight: 'ChevronRight',
+    ShieldCheck: 'ShieldCheck',
+    X: 'X',
+    ShoppingCart: 'ShoppingCart',
+    Check: 'Check',
+    Package: 'Package',
+    ChefHat: 'ChefHat',
+    Truck: 'Truck',
+    Store: 'Store',
+    MessageCircle: 'MessageCircle',
+    Home: 'Home',
+    XCircle: 'XCircle',
 }));
 
 // Mock DateTimePicker
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+
+// Mock LinearGradient
+// Mock Expo Modules Core
+jest.mock('expo-modules-core', () => ({
+    requireNativeModule: jest.fn(),
+    requireNativeViewManager: jest.fn(() => 'View'),
+    EventEmitter: jest.fn(() => ({
+        addListener: jest.fn(),
+        removeSubscription: jest.fn(),
+    })),
+}));

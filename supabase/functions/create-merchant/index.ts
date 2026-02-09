@@ -56,30 +56,41 @@ Deno.serve(async (req) => {
             // 2. Create Store
             // We expect the store details to be passed in metadata
             if (metadata.store_name) {
-                console.log('Creating store with metadata:', JSON.stringify(metadata, null, 2))
+                console.log('--- START STORE CREATION ---')
+                console.log(`Attempting to create store for user ${data.user.id}`)
+                console.log('Store Metadata:', JSON.stringify({
+                    name: metadata.store_name,
+                    reg: metadata.registration_number,
+                    doc: metadata.document_url
+                }))
 
-                const { error: storeError } = await supabaseAdmin
+                const storePayload = {
+                    owner_id: data.user.id,
+                    name: metadata.store_name,
+                    address: metadata.address,
+                    latitude: metadata.latitude,
+                    longitude: metadata.longitude,
+                    is_active: false,
+                    is_open: false,
+                    registration_number: metadata.registration_number,
+                    document_url: metadata.document_url,
+                    is_verified: false
+                }
+
+                const { data: storeData, error: storeError } = await supabaseAdmin
                     .from('stores')
-                    .insert({
-                        owner_id: data.user.id,
-                        name: metadata.store_name,
-                        address: metadata.address,
-                        latitude: metadata.latitude,
-                        longitude: metadata.longitude,
-                        is_active: false,
-                        is_open: false,
-                        registration_number: metadata.registration_number,
-                        document_url: metadata.document_url,
-                        is_verified: false
-                    })
+                    .insert(storePayload)
+                    .select()
 
                 if (storeError) {
-                    console.error('Error creating store:', storeError)
-                    // THROW the error so the client knows it failed!
+                    console.error('CRITICAL: Error creating store:', storeError)
                     throw new Error(`Failed to create store: ${storeError.message}`)
+                } else {
+                    console.log('SUCCESS: Store created:', JSON.stringify(storeData))
                 }
+                console.log('--- END STORE CREATION ---')
             } else {
-                console.warn('Metadata missing store_name, skipping store creation')
+                console.warn('WARNING: Metadata missing store_name, skipping store creation. Metadata keys:', Object.keys(metadata))
             }
 
             // 3. Create Role Request

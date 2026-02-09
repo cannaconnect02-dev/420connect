@@ -45,17 +45,17 @@ async function runTest() {
                 email: testEmail,
                 password: testPassword,
                 metadata: {
+                    full_name: `${testFirstName} ${testSurname}`,
                     first_name: testFirstName,
                     surname: testSurname,
-                    full_name: `${testFirstName} ${testSurname}`,
+                    address: '123 Test St, Test City',
+                    latitude: null, // Frontend might send null if address selection fails or isn't complete
+                    longitude: null,
                     role: 'merchant',
                     store_name: testStoreName,
                     registration_number: testRegNumber,
-                    document_url: 'https://example.com/doc.pdf',
-                    address: '123 Test St, Test City',
-                    latitude: 10.0,
-                    longitude: 20.0,
-                    date_of_birth: '1990-01-01'
+                    document_url: "", // Frontend sends empty string if no file uploaded
+                    // date_of_birth is MISSING as per Auth.tsx analysis
                 }
             }
         });

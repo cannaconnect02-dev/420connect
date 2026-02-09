@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Image, ActivityIndicator } from 'react-native';
 import { useCart } from '../../lib/CartContext';
-import { Trash2, ShoppingBag, CheckCircle, Clock, Package, MapPin, Star } from 'lucide-react-native';
+import { Trash2, ShoppingBag, CheckCircle, Clock, Package, MapPin, Star, Plus, Minus } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useState, useEffect } from 'react';
 import DriverRatingModal from '../components/DriverRatingModal';
@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 
 export default function OrdersScreen() {
     const router = useRouter();
-    const { items, removeFromCart, total, clearCart, storeId } = useCart();
+    const { items, removeFromCart, incrementQuantity, decrementQuantity, total, clearCart, storeId } = useCart();
     const [placingOrder, setPlacingOrder] = useState(false);
     const [activeOrders, setActiveOrders] = useState<any[]>([]);
     const [ratingModalVisible, setRatingModalVisible] = useState(false);
@@ -166,85 +166,21 @@ export default function OrdersScreen() {
         return (
             <View style={styles.container}>
                 <View style={styles.header}>
-                    <Text style={styles.title}>Your Orders</Text>
+                    <Text style={styles.title}>Your Cart</Text>
                 </View>
 
-                {activeOrders.length === 0 ? (
-                    <View style={styles.emptyState}>
-                        {/* @ts-ignore */}
-                        <ShoppingBag size={64} color="#334155" />
-                        <Text style={styles.emptyText}>No active orders</Text>
-                        <Text style={styles.emptySubtext}>Go find some premium strains!</Text>
-                    </View>
-                ) : (
-                    <FlatList
-                        data={activeOrders}
-                        keyExtractor={i => i.id}
-                        contentContainerStyle={{ padding: 20 }}
-                        renderItem={({ item }) => {
-                            const { color, icon: Icon, label } = getStatusInfo(item.status);
-                            return (
-                                <View style={styles.orderCard}>
-                                    <View style={styles.orderHeader}>
-                                        <Text style={styles.orderRest}>{item.stores?.name}</Text>
-                                        <View style={[styles.statusBadge, { backgroundColor: `${color}20` }]}>
-                                            {/* @ts-ignore */}
-                                            <Icon size={12} color={color} />
-                                            <Text style={[styles.statusText, { color: color }]}>{label.toUpperCase()}</Text>
-                                        </View>
-                                    </View>
-                                    <View style={styles.progressBar}>
-                                        <View style={[styles.progressFill, {
-                                            width:
-                                                item.status === 'pending' ? '25%' :
-                                                    item.status === 'preparing' ? '50%' :
-                                                        item.status === 'ready_for_pickup' ? '75%' :
-                                                            item.status === 'picked_up' ? '90%' : '100%',
-                                            backgroundColor: color
-                                        }]} />
-                                    </View>
-                                    <View style={styles.orderMeta}>
-                                        <Text style={styles.orderDate}>{new Date(item.created_at).toLocaleDateString()} {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                                        <Text style={styles.orderTotal}>R{item.total_amount}</Text>
-                                    </View>
-                                    {/* Rate Driver Button for delivered orders */}
-                                    {item.status === 'delivered' && !item.rated_at && (
-                                        <TouchableOpacity
-                                            style={styles.rateDriverBtn}
-                                            onPress={() => {
-                                                setSelectedOrderForRating(item);
-                                                setRatingModalVisible(true);
-                                            }}
-                                        >
-                                            {/* @ts-ignore */}
-                                            <Star size={16} color="#fbbf24" />
-                                            <Text style={styles.rateDriverText}>Rate Driver</Text>
-                                        </TouchableOpacity>
-                                    )}
-                                    {item.status === 'delivered' && item.rated_at && (
-                                        <View style={styles.ratedBadge}>
-                                            {/* @ts-ignore */}
-                                            <Star size={14} color="#10b981" fill="#10b981" />
-                                            <Text style={styles.ratedText}>Rated {item.driver_rating}★</Text>
-                                        </View>
-                                    )}
-                                </View>
-                            );
-                        }}
-                    />
-                )}
-
-                {/* Driver Rating Modal */}
-                <DriverRatingModal
-                    visible={ratingModalVisible}
-                    onClose={() => {
-                        setRatingModalVisible(false);
-                        setSelectedOrderForRating(null);
-                    }}
-                    orderId={selectedOrderForRating?.id || ''}
-                    orderTotal={selectedOrderForRating?.total_amount || 0}
-                    onRatingSubmitted={fetchActiveOrders}
-                />
+                <View style={styles.emptyState}>
+                    {/* @ts-ignore */}
+                    <ShoppingBag size={64} color="#334155" />
+                    <Text style={styles.emptyText}>Your cart is empty</Text>
+                    <Text style={styles.emptySubtext}>Add items from a store to get started</Text>
+                    <TouchableOpacity
+                        style={styles.browseButton}
+                        onPress={() => router.push('/(tabs)')}
+                    >
+                        <Text style={styles.browseButtonText}>Browse Stores</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
         );
     }
@@ -266,10 +202,32 @@ export default function OrdersScreen() {
                     <View style={styles.cartItem}>
                         <View style={styles.itemInfo}>
                             <Text style={styles.itemName}>{item.name}</Text>
-                            <Text style={styles.itemPrice}>R{item.price} x {item.quantity}</Text>
+                            <Text style={styles.itemPrice}>R{item.price}</Text>
                         </View>
+
                         <View style={styles.itemActions}>
+                            <View style={styles.quantityControls}>
+                                <TouchableOpacity
+                                    onPress={() => decrementQuantity(item.id)}
+                                    style={styles.qtyBtn}
+                                >
+                                    {/* @ts-ignore */}
+                                    <Minus size={16} color="#94a3b8" />
+                                </TouchableOpacity>
+
+                                <Text style={styles.qtyText}>{item.quantity}</Text>
+
+                                <TouchableOpacity
+                                    onPress={() => incrementQuantity(item.id)}
+                                    style={styles.qtyBtn}
+                                >
+                                    {/* @ts-ignore */}
+                                    <Plus size={16} color="white" />
+                                </TouchableOpacity>
+                            </View>
+
                             <Text style={styles.itemTotal}>R{(item.price * item.quantity).toFixed(2)}</Text>
+
                             <TouchableOpacity onPress={() => removeFromCart(item.id)} style={styles.removeBtn}>
                                 {/* @ts-ignore */}
                                 <Trash2 size={18} color="#ef4444" />
@@ -286,14 +244,10 @@ export default function OrdersScreen() {
                 </View>
                 <TouchableOpacity
                     style={styles.checkoutBtn}
-                    onPress={handleCheckout}
+                    onPress={() => router.push('/checkout')}
                     disabled={placingOrder}
                 >
-                    {placingOrder ? (
-                        <ActivityIndicator color="white" />
-                    ) : (
-                        <Text style={styles.checkoutText}>Place Order</Text>
-                    )}
+                    <Text style={styles.checkoutText}>Checkout</Text>
                 </TouchableOpacity>
             </View>
         </View>
@@ -489,5 +443,41 @@ const styles = StyleSheet.create({
         color: '#10b981',
         fontWeight: '600',
         fontSize: 12,
+    },
+    quantityControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginRight: 16,
+        backgroundColor: '#0f172a',
+        padding: 4,
+        borderRadius: 8,
+    },
+    qtyBtn: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: '#334155',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    qtyText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 14,
+        minWidth: 20,
+        textAlign: 'center',
+    },
+    browseButton: {
+        backgroundColor: '#10b981',
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 12,
+        marginTop: 20,
+    },
+    browseButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 16,
     },
 });

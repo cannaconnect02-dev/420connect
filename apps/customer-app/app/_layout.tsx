@@ -11,6 +11,7 @@ export {
 } from 'expo-router';
 
 import { CartProvider } from '../lib/CartContext';
+import { PaystackProvider } from 'react-native-paystack-webview';
 
 export default function RootLayout() {
     const [session, setSession] = useState<Session | null>(null);
@@ -18,15 +19,24 @@ export default function RootLayout() {
     const [addressConfirmed, setAddressConfirmed] = useState<boolean | null>(null);
     const [phoneVerified, setPhoneVerified] = useState<boolean | null>(null);
     const [isChecking, setIsChecking] = useState(false);
+    const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
     const segments = useSegments();
     const router = useRouter();
     const colorScheme = useColorScheme();
 
     useEffect(() => {
         // Listen for Auth Changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             setSession(session);
             setInitialized(true);
+
+            // Detect password recovery flow
+            if (event === 'PASSWORD_RECOVERY') {
+                console.log('NAV: PASSWORD_RECOVERY event detected');
+                setIsPasswordRecovery(true);
+                router.replace('/reset-password');
+                return;
+            }
 
             // Check profile status
             if (session?.user) {
@@ -34,6 +44,7 @@ export default function RootLayout() {
             } else {
                 setAddressConfirmed(null);
                 setPhoneVerified(null);
+                setIsPasswordRecovery(false);
             }
         });
 
@@ -89,8 +100,15 @@ export default function RootLayout() {
             isPublicRoute,
             phoneVerified,
             addressConfirmed,
-            isChecking
+            isChecking,
+            isPasswordRecovery
         });
+
+        // Don't redirect if user is in password recovery flow
+        if (isPasswordRecovery && inResetPassword) {
+            console.log('NAV: In password recovery - staying on reset-password');
+            return;
+        }
 
         if (!session && !isPublicRoute) {
             // Redirect to Login if not authenticated
@@ -103,9 +121,17 @@ export default function RootLayout() {
                 return;
             }
 
+            // Skip onboarding checks if in password recovery mode
+            if (isPasswordRecovery) {
+                console.log('NAV: Password recovery mode - skipping onboarding checks');
+                return;
+            }
+
             // 1. Phone Verification Check
+            // Also skip redirect if already on address-confirmation to prevent race condition
+            // when profile data is stale but user has already progressed to next step
             if (phoneVerified === false) {
-                if (!inPhoneEntry && !inPhoneVerification && !inOtpVerification) {
+                if (!inPhoneEntry && !inPhoneVerification && !inOtpVerification && !inAddressConfirmation) {
                     console.log('NAV: Redirecting to Phone Entry');
                     router.replace('/phone-entry');
                 }
@@ -123,13 +149,15 @@ export default function RootLayout() {
                 router.replace('/(tabs)/');
             }
         }
-    }, [session, segments, initialized, addressConfirmed, phoneVerified, isChecking]);
+    }, [session, segments, initialized, addressConfirmed, phoneVerified, isChecking, isPasswordRecovery]);
 
     return (
         <ThemeProvider value={DarkTheme}>
-            <CartProvider>
-                <Slot />
-            </CartProvider>
+            <PaystackProvider publicKey={process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || 'pk_test_placeholder'} currency="ZAR">
+                <CartProvider>
+                    <Slot />
+                </CartProvider>
+            </PaystackProvider>
         </ThemeProvider>
     );
 }

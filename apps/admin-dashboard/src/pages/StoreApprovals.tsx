@@ -40,7 +40,7 @@ export default function StoreApprovals() {
                     requested_at,
                     profiles:user_id (
                         full_name,
-                        stores:owner_id (
+                        stores (
                             name,
                             registration_number,
                             document_url
@@ -170,7 +170,8 @@ export default function StoreApprovals() {
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                        )
+                    })}
                 </div>
             )}
 
