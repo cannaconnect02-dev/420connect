@@ -4,13 +4,13 @@ import { supabase } from '../lib/supabase';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MapPin, CreditCard, ShieldCheck, ChevronRight, Lock, ArrowLeft } from 'lucide-react-native';
-import { usePaystack } from 'react-native-paystack-webview';
+import { usePaystack, PaystackProvider } from 'react-native-paystack-webview';
+import { getDistanceFromLatLonInKm } from '../lib/utils';
 
 // Constants
 const MAX_DELIVERY_DISTANCE_KM = 35;
-import { getDistanceFromLatLonInKm } from '../lib/utils';
 
-export default function CheckoutScreen() {
+function CheckoutContent() {
     const router = useRouter();
     const { items, total, clearCart, storeId } = useCart();
     const [loading, setLoading] = useState(true);
@@ -18,7 +18,7 @@ export default function CheckoutScreen() {
     const [userEmail, setUserEmail] = useState('');
     const [processing, setProcessing] = useState(false);
 
-    // Paystack hook
+    // Paystack hook - must be inside PaystackProvider
     const { popup } = usePaystack();
 
     useFocusEffect(
@@ -133,16 +133,38 @@ export default function CheckoutScreen() {
             return;
         }
 
-        popup.checkout({
-            email: userEmail,
-            amount: Math.round(total * 100), // Paystack expects amount in kobo/cents
-            onSuccess: (response) => {
-                handlePaymentSuccess(response.reference);
-            },
-            onCancel: () => {
-                Alert.alert("Payment Cancelled", "You cancelled the payment process.");
-            },
-        });
+        if (total <= 0) {
+            Alert.alert('Invalid Amount', 'Cart total cannot be zero.');
+            return;
+        }
+
+        if (processing) return;
+        setProcessing(true);
+
+        try {
+            const amountInKobo = Math.round(total * 100);
+
+            popup.checkout({
+                email: userEmail,
+                amount: amountInKobo,
+                onSuccess: (response: { reference: string }) => {
+                    handlePaymentSuccess(response.reference);
+                },
+                onCancel: () => {
+                    setProcessing(false);
+                    Alert.alert("Payment Cancelled", "You cancelled the payment process.");
+                },
+                onError: (e: any) => {
+                    console.error("Paystack Error:", e);
+                    Alert.alert("Payment Failed", "An error occurred with the payment processor.");
+                    setProcessing(false);
+                }
+            });
+        } catch (e) {
+            console.error("Initiate Payment Error:", e);
+            Alert.alert("Error", "Could not start payment.");
+            setProcessing(false);
+        }
     }
 
     if (loading) {
@@ -250,6 +272,16 @@ export default function CheckoutScreen() {
                 </TouchableOpacity>
             </View>
         </View>
+    );
+}
+
+export default function CheckoutScreen() {
+    return (
+        <PaystackProvider
+            publicKey={process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || 'pk_test_43aaa69c571b230508c9865a289e545c2d6c545b'}
+        >
+            <CheckoutContent />
+        </PaystackProvider>
     );
 }
 

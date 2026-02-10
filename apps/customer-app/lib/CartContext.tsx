@@ -7,6 +7,7 @@ export interface CartItem {
     price: number;
     quantity: number;
     storeId: string; // To ensure we only order from one store at a time
+    image_url?: string | null;
 }
 
 interface CartContextType {
@@ -37,7 +38,8 @@ export function CartProvider({ children }: PropsWithChildren) {
                 name: product.name,
                 price: product.price,
                 quantity: 1,
-                storeId
+                storeId,
+                image_url: product.image_url
             }];
         });
     };

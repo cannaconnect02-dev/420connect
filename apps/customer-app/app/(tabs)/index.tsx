@@ -242,7 +242,7 @@ export default function HomeScreen() {
                             >
                                 <View style={styles.dispensaryImageContainer}>
                                     <Image
-                                        source={require('../../assets/dispensary-placeholder.png')}
+                                        source={item.image_url ? { uri: item.image_url } : require('../../assets/dispensary-placeholder.png')}
                                         style={{ width: '100%', height: '100%' }}
                                         resizeMode="cover"
                                     />
@@ -279,7 +279,7 @@ export default function HomeScreen() {
                             >
                                 <View style={styles.productImageContainer}>
                                     <Image
-                                        source={require('../../assets/product-placeholder.png')}
+                                        source={item.image_url ? { uri: item.image_url } : require('../../assets/product-placeholder.png')}
                                         style={{ width: '100%', height: '100%' }}
                                         resizeMode="cover"
                                     />

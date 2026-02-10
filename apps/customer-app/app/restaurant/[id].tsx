@@ -57,7 +57,7 @@ export default function RestaurantDetails() {
             {/* Header Image */}
             <View style={styles.header}>
                 <Image
-                    source={require('../../assets/pizza-banner.png')}
+                    source={store?.image_url ? { uri: store.image_url } : require('../../assets/pizza-banner.png')}
                     style={styles.bannerImage}
                     resizeMode="cover"
                 />
@@ -92,6 +92,12 @@ export default function RestaurantDetails() {
 
                     {menuItems.map((item) => (
                         <TouchableOpacity key={item.id} style={styles.menuItem} onPress={() => setSelectedProduct(item)}>
+                            {item.image_url && (
+                                <Image
+                                    source={{ uri: item.image_url }}
+                                    style={{ width: 60, height: 60, borderRadius: 8, marginRight: 12 }}
+                                />
+                            )}
                             <View style={styles.menuInfo}>
                                 <Text style={styles.menuTitle}>{item.name}</Text>
                                 <Text style={styles.menuDesc} numberOfLines={2}>{item.description}</Text>
@@ -122,7 +128,7 @@ export default function RestaurantDetails() {
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
                             <Image
-                                source={require('../../assets/product-placeholder.png')}
+                                source={selectedProduct.image_url ? { uri: selectedProduct.image_url } : require('../../assets/product-placeholder.png')}
                                 style={styles.modalImage}
                                 resizeMode="cover"
                             />

@@ -42,101 +42,112 @@ export type Product = {
     stock_quantity: number
     is_available: boolean
     image_url: string | null
+    description?: string | null
+    unit?: string
+    thc_percentage?: number | null
+    cbd_percentage?: number | null
+    strain_type?: string
 }
 
-export const columns: ColumnDef<Product>[] = [
-    {
-        accessorKey: "name",
-        header: ({ column }) => {
-            return (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                >
-                    Name
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            )
-        },
-        cell: ({ row }) => <div className="lowercase font-medium text-white">{row.getValue("name")}</div>,
-    },
-    {
-        accessorKey: "category",
-        header: "Category",
-        cell: ({ row }) => <Badge variant="outline">{row.getValue("category")}</Badge>,
-    },
-    {
-        accessorKey: "price",
-        header: () => <div className="text-right">Price</div>,
-        cell: ({ row }) => {
-            const amount = parseFloat(row.getValue("price"))
-            const formatted = new Intl.NumberFormat("en-US", {
-                style: "currency",
-                currency: "USD",
-            }).format(amount)
+interface ProductTableProps {
+    onEditProduct?: (product: Product) => void;
+}
 
-            return <div className="text-right font-medium">{formatted}</div>
-        },
-    },
-    {
-        accessorKey: "stock_quantity",
-        header: "Stock",
-        cell: ({ row }) => {
-            const stock = row.getValue("stock_quantity") as number;
-            return (
-                <div className={stock < 10 ? "text-red-400 font-bold" : "text-slate-400"}>
-                    {stock} units
-                </div>
-            )
-        },
-    },
-    {
-        accessorKey: "is_available",
-        header: "Status",
-        cell: ({ row }) => (
-            <Badge variant={row.getValue("is_available") ? "default" : "secondary"}>
-                {row.getValue("is_available") ? "Active" : "Hidden"}
-            </Badge>
-        ),
-    },
-    {
-        id: "actions",
-        enableHiding: false,
-        cell: ({ row }) => {
-            const product = row.original
-
-            return (
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
-                            <span className="sr-only">Open menu</span>
-                            <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem
-                            onClick={() => navigator.clipboard.writeText(product.id)}
-                        >
-                            Copy ID
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem>Edit details</DropdownMenuItem>
-                        <DropdownMenuItem className="text-red-500">Delete product</DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            )
-        },
-    },
-]
-
-export function ProductTable() {
+export function ProductTable({ onEditProduct }: ProductTableProps) {
     const [data, setData] = React.useState<Product[]>([])
     const [loading, setLoading] = React.useState(true)
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
     const [rowSelection, setRowSelection] = React.useState({})
+
+    const columns: ColumnDef<Product>[] = React.useMemo(() => [
+        {
+            accessorKey: "name",
+            header: ({ column }) => {
+                return (
+                    <Button
+                        variant="ghost"
+                        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    >
+                        Name
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                    </Button>
+                )
+            },
+            cell: ({ row }) => <div className="lowercase font-medium text-white">{row.getValue("name")}</div>,
+        },
+        {
+            accessorKey: "category",
+            header: "Category",
+            cell: ({ row }) => <Badge variant="outline">{row.getValue("category")}</Badge>,
+        },
+        {
+            accessorKey: "price",
+            header: () => <div className="text-right">Price</div>,
+            cell: ({ row }) => {
+                const amount = parseFloat(row.getValue("price"))
+                const formatted = new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                }).format(amount)
+
+                return <div className="text-right font-medium">{formatted}</div>
+            },
+        },
+        {
+            accessorKey: "stock_quantity",
+            header: "Stock",
+            cell: ({ row }) => {
+                const stock = row.getValue("stock_quantity") as number;
+                return (
+                    <div className={stock < 10 ? "text-red-400 font-bold" : "text-slate-400"}>
+                        {stock} units
+                    </div>
+                )
+            },
+        },
+        {
+            accessorKey: "is_available",
+            header: "Status",
+            cell: ({ row }) => (
+                <Badge variant={row.getValue("is_available") ? "default" : "secondary"}>
+                    {row.getValue("is_available") ? "Active" : "Hidden"}
+                </Badge>
+            ),
+        },
+        {
+            id: "actions",
+            enableHiding: false,
+            cell: ({ row }) => {
+                const product = row.original
+
+                return (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                                <span className="sr-only">Open menu</span>
+                                <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuItem
+                                onClick={() => navigator.clipboard.writeText(product.id)}
+                            >
+                                Copy ID
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => onEditProduct?.(product)}>
+                                Edit details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-red-500">Delete product</DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )
+            },
+        },
+    ], [onEditProduct]);
 
     React.useEffect(() => {
         async function fetchProducts() {

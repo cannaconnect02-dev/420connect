@@ -200,6 +200,12 @@ export default function OrdersScreen() {
                 contentContainerStyle={{ padding: 20 }}
                 renderItem={({ item }) => (
                     <View style={styles.cartItem}>
+                        {item.image_url && (
+                            <Image
+                                source={{ uri: item.image_url }}
+                                style={{ width: 60, height: 60, borderRadius: 8, marginRight: 12 }}
+                            />
+                        )}
                         <View style={styles.itemInfo}>
                             <Text style={styles.itemName}>{item.name}</Text>
                             <Text style={styles.itemPrice}>R{item.price}</Text>
