@@ -102,7 +102,7 @@ export function CartProvider({ children }: PropsWithChildren) {
     const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
     return (
-        <CartContext.Provider value={{ items, addToCart, removeFromCart, incrementQuantity, decrementQuantity, clearCart, total, storeId: activeStoreId }}>
+        <CartContext.Provider value={{ items, addToCart, removeFromCart, incrementQuantity, decrementQuantity, clearCart, total, storeId: activeStoreId || items[0]?.storeId || null }}>
             {children}
         </CartContext.Provider>
     );

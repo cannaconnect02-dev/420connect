@@ -60,11 +60,20 @@ function CheckoutContent() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user || !address) return;
 
+            // Get storeId from context or items fallback
+            const finalStoreId = storeId || items[0]?.storeId;
+
+            if (!finalStoreId) {
+                console.error("Missing Store ID for order");
+                Alert.alert("Order Error", "Could not determine store information. Please contact support.");
+                return;
+            }
+
             // 1. Validate Store Location again (Safety check)
             const { data: store } = await supabase
                 .from('stores')
                 .select('latitude, longitude, name')
-                .eq('id', storeId)
+                .eq('id', finalStoreId)
                 .single();
 
             if (store && store.latitude && store.longitude && address.lat && address.lng) {
@@ -85,7 +94,7 @@ function CheckoutContent() {
                 .from('orders')
                 .insert({
                     customer_id: user.id,
-                    store_id: storeId,
+                    store_id: finalStoreId,
                     total_amount: total,
                     status: 'pending',
                     delivery_address: customerAddress,
