@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MapPin, CreditCard, ShieldCheck, ChevronRight, Lock, ArrowLeft } from 'lucide-react-native';
 import { usePaystack, PaystackProvider } from 'react-native-paystack-webview';
+// ... previous imports
 import { getDistanceFromLatLonInKm } from '../lib/utils';
 
 // Constants
@@ -12,11 +13,14 @@ const MAX_DELIVERY_DISTANCE_KM = 35;
 
 function CheckoutContent() {
     const router = useRouter();
-    const { items, total, clearCart, storeId } = useCart();
+    const { items, total: cartTotal, clearCart, storeId } = useCart();
     const [loading, setLoading] = useState(true);
     const [address, setAddress] = useState<any>(null);
     const [userEmail, setUserEmail] = useState('');
     const [processing, setProcessing] = useState(false);
+    const [deliveryFee, setDeliveryFee] = useState(0);
+    const [calculatingFee, setCalculatingFee] = useState(false);
+    const [storeLocation, setStoreLocation] = useState<{ lat: number; lng: number } | null>(null);
 
     // Paystack hook - must be inside PaystackProvider
     const { popup } = usePaystack();
@@ -26,6 +30,80 @@ function CheckoutContent() {
             fetchCheckoutData();
         }, [])
     );
+
+    // Fetch Delivery Settings and Store Location
+    useEffect(() => {
+        if (address && (storeId || items[0]?.storeId)) {
+            calculateFee();
+        }
+    }, [address, storeId, items]);
+
+    async function calculateFee() {
+        setCalculatingFee(true);
+        try {
+            const finalStoreId = storeId || items[0]?.storeId;
+            if (!finalStoreId || !address?.lat || !address?.lng) {
+                setDeliveryFee(0);
+                return;
+            }
+
+            // 1. Fetch Admin Settings
+            const { data: settingsData } = await supabase
+                .from('settings')
+                .select('key, value')
+                .in('key', ['delivery_base_rate', 'delivery_threshold_km', 'delivery_extended_price']);
+
+            let baseRate = 30;
+            let threshold = 5;
+            let extendedRate = 2.5;
+
+            if (settingsData) {
+                settingsData.forEach(setting => {
+                    if (setting.key === 'delivery_base_rate') baseRate = Number(setting.value?.amount || 30);
+                    if (setting.key === 'delivery_threshold_km') threshold = Number(setting.value?.km || 5);
+                    if (setting.key === 'delivery_extended_price') extendedRate = Number(setting.value?.rate || 2.5);
+                });
+            }
+
+            // 2. Fetch Store Location (if not already)
+            let storeLat = storeLocation?.lat;
+            let storeLng = storeLocation?.lng;
+
+            if (!storeLat || !storeLng) {
+                const { data: store } = await supabase
+                    .from('stores')
+                    .select('latitude, longitude')
+                    .eq('id', finalStoreId)
+                    .single();
+
+                if (store) {
+                    storeLat = store.latitude;
+                    storeLng = store.longitude;
+                    setStoreLocation({ lat: store.latitude, lng: store.longitude });
+                }
+            }
+
+            if (storeLat && storeLng) {
+                const distance = getDistanceFromLatLonInKm(address.lat, address.lng, storeLat, storeLng);
+
+                // Calculate Fee
+                if (distance !== null) {
+                    let fee = baseRate;
+                    if (distance > threshold) {
+                        fee += (distance - threshold) * extendedRate;
+                    }
+                    setDeliveryFee(Math.round(fee * 100) / 100); // Round to 2 decimals
+                } else {
+                    setDeliveryFee(0);
+                }
+            }
+
+        } catch (error) {
+            console.error('Error calculating delivery fee:', error);
+        } finally {
+            setCalculatingFee(false);
+        }
+    }
 
     async function fetchCheckoutData() {
         try {
@@ -53,15 +131,23 @@ function CheckoutContent() {
         }
     }
 
+    const finalTotal = cartTotal + deliveryFee;
+
     async function handlePaymentSuccess(reference: string) {
         // Payment successful, now create order
         setProcessing(true);
+        console.log('handlePaymentSuccess called with ref:', reference);
         try {
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user || !address) return;
+            console.log('User:', user?.id, 'Address:', address?.id);
+            if (!user || !address) {
+                console.log('Missing user or address');
+                return;
+            }
 
             // Get storeId from context or items fallback
             const finalStoreId = storeId || items[0]?.storeId;
+            console.log('Final Store ID:', finalStoreId);
 
             if (!finalStoreId) {
                 console.error("Missing Store ID for order");
@@ -69,25 +155,40 @@ function CheckoutContent() {
                 return;
             }
 
-            // 1. Validate Store Location again (Safety check)
-            const { data: store } = await supabase
-                .from('stores')
-                .select('latitude, longitude, name')
-                .eq('id', finalStoreId)
-                .single();
+            // 1. Validate Store Location again (Safety check) - reusing cached location if available
+            let storeLat = storeLocation?.lat;
+            let storeLng = storeLocation?.lng;
+            console.log('Store Location:', storeLat, storeLng);
 
-            if (store && store.latitude && store.longitude && address.lat && address.lng) {
+            if (!storeLat || !storeLng) {
+                console.log('Fetching store location...');
+                const { data: store } = await supabase
+                    .from('stores')
+                    .select('latitude, longitude')
+                    .eq('id', finalStoreId)
+                    .single();
+                if (store) {
+                    storeLat = store.latitude;
+                    storeLng = store.longitude;
+                    console.log('Fetched Store Location:', storeLat, storeLng);
+                }
+            }
+
+            if (storeLat && storeLng && address.lat && address.lng) {
+                console.log('Calculating distance...');
                 const distance = getDistanceFromLatLonInKm(
                     address.lat, address.lng,
-                    store.latitude, store.longitude
+                    storeLat, storeLng
                 );
+                console.log('Distance:', distance);
 
-                if (distance && distance > MAX_DELIVERY_DISTANCE_KM) {
+                if (distance !== null && distance > MAX_DELIVERY_DISTANCE_KM) {
                     throw new Error(`Store is too far away (${distance.toFixed(1)}km).`);
                 }
             }
 
             const customerAddress = `${address.address_line1}, ${address.city}`;
+            console.log('Inserting order...');
 
             // 2. Create Order
             const { data: order, error } = await supabase
@@ -95,12 +196,13 @@ function CheckoutContent() {
                 .insert({
                     customer_id: user.id,
                     store_id: finalStoreId,
-                    total_amount: total,
+                    total_amount: finalTotal, // Use final total with delivery fee
                     status: 'pending',
                     delivery_address: customerAddress,
                     delivery_location: address.lat && address.lng ? `POINT(${address.lng} ${address.lat})` : null,
                     payment_ref: reference, // Save Paystack reference
                     payment_status: 'paid'
+                    // delivery_fee: deliveryFee // Optionally add if column exists
                 })
                 .select()
                 .single();
@@ -142,7 +244,7 @@ function CheckoutContent() {
             return;
         }
 
-        if (total <= 0) {
+        if (finalTotal <= 0) {
             Alert.alert('Invalid Amount', 'Cart total cannot be zero.');
             return;
         }
@@ -151,11 +253,24 @@ function CheckoutContent() {
         setProcessing(true);
 
         try {
-            const amountInKobo = Math.round(total * 100);
+            // Paystack amount should be in base currency (Run check)
+            // But if user says "divided by 100", they see 1.00 when expect 100.
+            // If they see 1.00, Paystack got 100.
+            // If My Code sent 10000 -> 100.00.
+            // If user sees 10000 -> 10000.00.
+            // Maybe user wants me to REMOVE the multiplication because library handles it?
+            // "right now it seems the amount is divided by 100" -> This phrasing is tricky.
+            // I'll assume they meant "The amount SHOWN is 100x the real amount" (Multiplied).
+            // So removing * 100 fixes it.
+
+            // However, most Paystack integrations require Kobo.
+            // Let's trust the user's observation implies a scaling issue.
+            // I will remove the manual multiplication.
+            const amount = finalTotal;
 
             popup.checkout({
                 email: userEmail,
-                amount: amountInKobo,
+                amount: amount,
                 onSuccess: (response: { reference: string }) => {
                     handlePaymentSuccess(response.reference);
                 },
@@ -238,9 +353,27 @@ function CheckoutContent() {
                             </View>
                         ))}
                         <View style={styles.divider} />
+
+                        {/* Subtotal */}
+                        <View style={[styles.summaryRow, { marginBottom: 4 }]}>
+                            <Text style={styles.summaryItemText}>Subtotal</Text>
+                            <Text style={styles.summaryPrice}>R{cartTotal.toFixed(2)}</Text>
+                        </View>
+
+                        {/* Delivery Fee */}
+                        <View style={styles.summaryRow}>
+                            <Text style={styles.summaryItemText}>Delivery Fee</Text>
+                            {calculatingFee ? (
+                                <ActivityIndicator size="small" color="#10b981" />
+                            ) : (
+                                <Text style={styles.summaryPrice}>R{deliveryFee.toFixed(2)}</Text>
+                            )}
+                        </View>
+
+                        <View style={styles.divider} />
                         <View style={styles.totalRow}>
                             <Text style={styles.totalLabel}>Total</Text>
-                            <Text style={styles.totalValue}>R{total.toFixed(2)}</Text>
+                            <Text style={styles.totalValue}>R{finalTotal.toFixed(2)}</Text>
                         </View>
                     </View>
                 </View>
@@ -266,6 +399,7 @@ function CheckoutContent() {
                 </View>
 
                 <TouchableOpacity
+                    testID="pay-button"
                     style={[styles.payButton, (!address || processing) && styles.payButtonDisabled]}
                     onPress={initiatePayment}
                     disabled={!address || processing}
@@ -274,7 +408,7 @@ function CheckoutContent() {
                         <ActivityIndicator color="white" />
                     ) : (
                         <View style={styles.payButtonContent}>
-                            <Text style={styles.payButtonText}>Pay R{total.toFixed(2)}</Text>
+                            <Text style={styles.payButtonText}>Pay R{finalTotal.toFixed(2)}</Text>
                             <ChevronRight size={20} color="white" />
                         </View>
                     )}

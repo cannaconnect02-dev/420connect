@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2, Upload, X, Image as ImageIcon, Info } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { type Product } from "./ProductTable";
+import { calculateCustomerPrice } from "@/lib/pricing";
 
 interface EditProductDialogProps {
     product: Product | null;
@@ -73,15 +74,10 @@ export function EditProductDialog({ product, open, onOpenChange, onProductUpdate
         }
     };
 
-    const calculateCustomerPrice = (basePrice: string) => {
-        if (!basePrice) return "0.00";
+    const getCustomerPrice = (basePrice: string) => {
         const base = parseFloat(basePrice);
-        if (isNaN(base)) return "0.00";
-
-        const withMarkup = base + (base * (markupPercent / 100));
-        // Round up to nearest 5
-        const rounded = Math.ceil(withMarkup / 5) * 5;
-        return rounded.toFixed(2);
+        if (!basePrice || isNaN(base)) return "0.00";
+        return calculateCustomerPrice(base, markupPercent).toFixed(2);
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -128,6 +124,7 @@ export function EditProductDialog({ product, open, onOpenChange, onProductUpdate
             throw new Error('Failed to upload image');
         }
 
+        // Get public URL
         const { data: { publicUrl } } = supabase.storage
             .from('product-images')
             .getPublicUrl(data.path);
@@ -308,7 +305,7 @@ export function EditProductDialog({ product, open, onOpenChange, onProductUpdate
                             <div className="grid gap-2">
                                 <Label className="text-slate-300">Customer Pays (Approx)</Label>
                                 <div className="h-10 px-3 py-2 bg-slate-800 rounded-md border border-white/10 text-white font-medium flex items-center">
-                                    R {calculateCustomerPrice(formData.price)}
+                                    R {getCustomerPrice(formData.price)}
                                 </div>
                                 <p className="text-xs text-slate-500">Includes platform markup.</p>
                             </div>

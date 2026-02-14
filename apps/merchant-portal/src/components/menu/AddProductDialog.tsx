@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Plus, Loader2, Upload, X, Image as ImageIcon, Info } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { calculateCustomerPrice } from "@/lib/pricing";
 
 export function AddProductDialog({ onProductAdded }: { onProductAdded: () => void }) {
     const [open, setOpen] = useState(false);
@@ -47,15 +48,10 @@ export function AddProductDialog({ onProductAdded }: { onProductAdded: () => voi
         }
     };
 
-    const calculateCustomerPrice = (basePrice: string) => {
-        if (!basePrice) return "0.00";
+    const getCustomerPrice = (basePrice: string) => {
         const base = parseFloat(basePrice);
-        if (isNaN(base)) return "0.00";
-
-        const withMarkup = base + (base * (markupPercent / 100));
-        // Round up to nearest 5
-        const rounded = Math.ceil(withMarkup / 5) * 5;
-        return rounded.toFixed(2);
+        if (!basePrice || isNaN(base)) return "0.00";
+        return calculateCustomerPrice(base, markupPercent).toFixed(2);
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -316,7 +312,7 @@ export function AddProductDialog({ onProductAdded }: { onProductAdded: () => voi
                             <div className="grid gap-2">
                                 <Label className="text-slate-300">Customer Pays (Approx)</Label>
                                 <div className="h-10 px-3 py-2 bg-slate-800 rounded-md border border-white/10 text-white font-medium flex items-center">
-                                    R {calculateCustomerPrice(formData.price)}
+                                    R {getCustomerPrice(formData.price)}
                                 </div>
                                 <p className="text-xs text-slate-500">Includes platform markup.</p>
                             </div>
