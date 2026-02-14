@@ -22,6 +22,7 @@ export default function HomeScreen() {
     const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
     const [showCartConfirmation, setShowCartConfirmation] = useState(false);
     const [lastAddedItem, setLastAddedItem] = useState<any>(null);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
 
     const cartItemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -46,6 +47,8 @@ export default function HomeScreen() {
     async function fetchUserLocationAndData() {
         try {
             const { data: { user } } = await supabase.auth.getUser();
+            setIsAuthenticated(!!user);
+
             if (!user) {
                 fetchDataWithDistance(null, null); // No user, fetch without distance
                 return;
@@ -283,21 +286,25 @@ export default function HomeScreen() {
                                         style={{ width: '100%', height: '100%' }}
                                         resizeMode="cover"
                                     />
-                                    <TouchableOpacity
-                                        style={styles.addBtn}
-                                        onPress={(e) => {
-                                            e.stopPropagation();
-                                            addToCart(item, item.store_id);
-                                            setLastAddedItem(item);
-                                            setShowCartConfirmation(true);
-                                        }}
-                                    >
-                                        <Plus size={20} color="white" />
-                                    </TouchableOpacity>
+                                    {isAuthenticated && (
+                                        <TouchableOpacity
+                                            style={styles.addBtn}
+                                            onPress={(e) => {
+                                                e.stopPropagation();
+                                                addToCart(item, item.store_id);
+                                                setLastAddedItem(item);
+                                                setShowCartConfirmation(true);
+                                            }}
+                                        >
+                                            <Plus size={20} color="white" />
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
                                 <View style={styles.productInfo}>
                                     <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
-                                    <Text style={styles.productPrice}>R{item.price}</Text>
+                                    <Text style={styles.productPrice}>
+                                        {isAuthenticated ? `R${item.price}` : "Login for price"}
+                                    </Text>
                                 </View>
                             </TouchableOpacity>
                         ))}

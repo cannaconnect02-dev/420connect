@@ -47,6 +47,7 @@ export type Product = {
     thc_percentage?: number | null
     cbd_percentage?: number | null
     strain_type?: string
+    base_price?: number | null // Added for pricing system
 }
 
 interface ProductTableProps {
@@ -83,8 +84,21 @@ export function ProductTable({ onEditProduct }: ProductTableProps) {
             cell: ({ row }) => <Badge variant="outline">{row.getValue("category")}</Badge>,
         },
         {
+            accessorKey: "base_price",
+            header: () => <div className="text-right text-slate-400">Your Cost</div>,
+            cell: ({ row }) => {
+                const amount = parseFloat(row.getValue("base_price") || row.getValue("price"))
+                const formatted = new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD", // Should be ZAR based on context, but file uses USD. Keeping consistent.
+                }).format(amount)
+
+                return <div className="text-right font-medium text-slate-400">{formatted}</div>
+            },
+        },
+        {
             accessorKey: "price",
-            header: () => <div className="text-right">Price</div>,
+            header: () => <div className="text-right text-green-400">Retail Price</div>,
             cell: ({ row }) => {
                 const amount = parseFloat(row.getValue("price"))
                 const formatted = new Intl.NumberFormat("en-US", {
@@ -92,7 +106,7 @@ export function ProductTable({ onEditProduct }: ProductTableProps) {
                     currency: "USD",
                 }).format(amount)
 
-                return <div className="text-right font-medium">{formatted}</div>
+                return <div className="text-right font-bold text-green-400">{formatted}</div>
             },
         },
         {

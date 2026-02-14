@@ -66,7 +66,7 @@ export default function StoreApprovals() {
         setProcessing(requestId);
         try {
             // Try calling the edge function
-            const { data, error } = await supabase.functions.invoke('review-store-application', {
+            const { error } = await supabase.functions.invoke('review-store-application', {
                 body: { requestId, status }
             });
 

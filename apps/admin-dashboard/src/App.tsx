@@ -2,15 +2,15 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import type { Session } from '@supabase/supabase-js';
-import { LayoutDashboard, Users, Settings, LogOut, Store } from 'lucide-react';
+import { LayoutDashboard, Users, Settings as SettingsIcon, LogOut, Store, PlusCircle } from 'lucide-react';
 
-// Pages
 // Pages
 import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
 import DriverApprovals from './pages/DriverApprovals';
 import NewStore from './pages/NewStore';
 import StoreApprovals from './pages/StoreApprovals';
+import Settings from './pages/Settings';
 import { Link, useLocation } from 'react-router-dom';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
@@ -58,8 +58,13 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             <Users size={20} /> Driver Approvals
           </Link>
           <Link to="/stores/new" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive('/stores/new')}`}>
-            <Settings size={20} /> Onboard Store
+            <PlusCircle size={20} /> Onboard Store
           </Link>
+          <div className="border-t border-slate-800 my-4 pt-4">
+            <Link to="/settings" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive('/settings')}`}>
+              <SettingsIcon size={20} /> Settings
+            </Link>
+          </div>
         </nav>
 
         <button
@@ -101,6 +106,11 @@ export default function App() {
         <Route path="/stores/new" element={
           <ProtectedLayout>
             <NewStore />
+          </ProtectedLayout>
+        } />
+        <Route path="/settings" element={
+          <ProtectedLayout>
+            <Settings />
           </ProtectedLayout>
         } />
       </Routes>

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Upload, X, Image as ImageIcon } from "lucide-react";
+import { Loader2, Upload, X, Image as ImageIcon, Info } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { type Product } from "./ProductTable";
 
@@ -21,13 +21,14 @@ export function EditProductDialog({ product, open, onOpenChange, onProductUpdate
     const [loading, setLoading] = useState(false);
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [markupPercent, setMarkupPercent] = useState(20); // Default 20%
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Initial form state - we'll update this when product changes
     const [formData, setFormData] = useState({
         name: "",
         description: "",
-        price: "",
+        price: "", // Base Price (Your Cost)
         category: "flower",
         stock_quantity: "",
         unit: "g",
@@ -42,8 +43,8 @@ export function EditProductDialog({ product, open, onOpenChange, onProductUpdate
         if (product) {
             setFormData({
                 name: product.name,
-                description: (product as any).description || "", // Type assertion if description missing in Product type
-                price: product.price.toString(),
+                description: (product as any).description || "",
+                price: (product.base_price ?? product.price).toString(), // Use base_price if available, else fallback
                 category: product.category,
                 stock_quantity: product.stock_quantity.toString(),
                 unit: (product as any).unit || "g",
@@ -54,8 +55,34 @@ export function EditProductDialog({ product, open, onOpenChange, onProductUpdate
             });
             setImagePreview(product.image_url);
             setImageFile(null); // Reset new file
+
+            // Fetch markup when dialog opens
+            fetchMarkup();
         }
-    }, [product]);
+    }, [product, open]);
+
+    const fetchMarkup = async () => {
+        const { data } = await supabase
+            .from('settings')
+            .select('value')
+            .eq('key', 'global_markup_percent')
+            .single();
+
+        if (data?.value?.percent) {
+            setMarkupPercent(Number(data.value.percent));
+        }
+    };
+
+    const calculateCustomerPrice = (basePrice: string) => {
+        if (!basePrice) return "0.00";
+        const base = parseFloat(basePrice);
+        if (isNaN(base)) return "0.00";
+
+        const withMarkup = base + (base * (markupPercent / 100));
+        // Round up to nearest 5
+        const rounded = Math.ceil(withMarkup / 5) * 5;
+        return rounded.toFixed(2);
+    };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -117,9 +144,7 @@ export function EditProductDialog({ product, open, onOpenChange, onProductUpdate
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("Not authenticated");
 
-            // Look up store again to be safe, or just use product's store_id if we had it. 
-            // We'll fetch store to get ID for image path if needed.
-            // Actually, we can just use the user's store since they are the owner.
+            // Look up store again to be safe
             const { data: store } = await supabase
                 .from('stores')
                 .select('id')
@@ -129,11 +154,9 @@ export function EditProductDialog({ product, open, onOpenChange, onProductUpdate
             if (!store) throw new Error("Store not found");
 
             let imageUrl = product.image_url;
-            // If image was changed (file selected)
             if (imageFile) {
                 imageUrl = await uploadImage(store.id);
             } else if (!imagePreview && product.image_url) {
-                // Image was removed
                 imageUrl = null;
             }
 
@@ -142,7 +165,8 @@ export function EditProductDialog({ product, open, onOpenChange, onProductUpdate
                 .update({
                     name: formData.name,
                     description: formData.description,
-                    price: parseFloat(formData.price),
+                    base_price: parseFloat(formData.price), // Update base_price
+                    // price: ... trigger will set this
                     category: formData.category,
                     stock_quantity: parseInt(formData.stock_quantity),
                     unit: formData.unit,
@@ -255,11 +279,43 @@ export function EditProductDialog({ product, open, onOpenChange, onProductUpdate
                         <Textarea id="edit-description" name="description" value={formData.description} onChange={handleChange} className="bg-slate-950 border-white/10" />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
-                        <div className="grid gap-2">
-                            <Label htmlFor="edit-price">Price ($)</Label>
-                            <Input id="edit-price" name="price" type="number" step="0.01" value={formData.price} onChange={handleChange} required className="bg-slate-950 border-white/10" />
+                    <div className="bg-slate-800/50 p-4 rounded-lg border border-white/5 space-y-4">
+                        <div className="flex items-center gap-2 text-blue-400 text-sm mb-2">
+                            <Info size={16} />
+                            <span className="font-semibold">Pricing Calculator</span>
                         </div>
+
+                        <div className="grid grid-cols-2 gap-6">
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit-price" className="text-green-400">Your Cost (Base Price)</Label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-2.5 text-slate-400">R</span>
+                                    <Input
+                                        id="edit-price"
+                                        name="price"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={formData.price}
+                                        onChange={handleChange}
+                                        required
+                                        className="bg-slate-950 border-white/10 pl-8"
+                                        placeholder="0.00"
+                                    />
+                                </div>
+                                <p className="text-xs text-slate-400">Enter the amount you want to earn.</p>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label className="text-slate-300">Customer Pays (Approx)</Label>
+                                <div className="h-10 px-3 py-2 bg-slate-800 rounded-md border border-white/10 text-white font-medium flex items-center">
+                                    R {calculateCustomerPrice(formData.price)}
+                                </div>
+                                <p className="text-xs text-slate-500">Includes platform markup.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
                         <div className="grid gap-2">
                             <Label htmlFor="edit-stock">Stock Qty</Label>
                             <Input id="edit-stock" name="stock_quantity" type="number" value={formData.stock_quantity} onChange={handleChange} required className="bg-slate-950 border-white/10" />

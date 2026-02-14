@@ -15,15 +15,23 @@ export default function RestaurantDetails() {
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
     const [showCartConfirmation, setShowCartConfirmation] = useState(false);
     const [lastAddedItem, setLastAddedItem] = useState<any>(null);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
     const { addToCart, items, total } = useCart();
 
     useEffect(() => {
+        checkAuth();
         fetchData();
     }, [id]);
+
+    async function checkAuth() {
+        const { data: { user } } = await supabase.auth.getUser();
+        setIsAuthenticated(!!user);
+    }
 
     async function fetchData() {
         if (!id) return;
 
+        // ... existing fetch logic ...
         // 1. Fetch Restaurant Info
         const { data: rData, error: rError } = await supabase
             .from('stores')
@@ -101,18 +109,22 @@ export default function RestaurantDetails() {
                             <View style={styles.menuInfo}>
                                 <Text style={styles.menuTitle}>{item.name}</Text>
                                 <Text style={styles.menuDesc} numberOfLines={2}>{item.description}</Text>
-                                <Text style={styles.menuPrice}>R{item.price}</Text>
+                                <Text style={styles.menuPrice}>
+                                    {isAuthenticated ? `R${item.price}` : "Login for price"}
+                                </Text>
                             </View>
-                            <TouchableOpacity
-                                style={styles.addButton}
-                                onPress={() => {
-                                    addToCart(item, id as string);
-                                    setLastAddedItem(item);
-                                    setShowCartConfirmation(true);
-                                }}
-                            >
-                                <Plus size={20} color="#10b981" />
-                            </TouchableOpacity>
+                            {isAuthenticated && (
+                                <TouchableOpacity
+                                    style={styles.addButton}
+                                    onPress={() => {
+                                        addToCart(item, id as string);
+                                        setLastAddedItem(item);
+                                        setShowCartConfirmation(true);
+                                    }}
+                                >
+                                    <Plus size={20} color="#10b981" />
+                                </TouchableOpacity>
+                            )}
                         </TouchableOpacity>
                     ))}
 
@@ -143,7 +155,9 @@ export default function RestaurantDetails() {
                         <View style={styles.modalBody}>
                             <View style={styles.modalTitleRow}>
                                 <Text style={styles.modalTitle}>{selectedProduct.name}</Text>
-                                <Text style={styles.modalPrice}>R{selectedProduct.price}</Text>
+                                <Text style={styles.modalPrice}>
+                                    {isAuthenticated ? `R${selectedProduct.price}` : ""}
+                                </Text>
                             </View>
 
                             <ScrollView style={styles.modalScroll}>
@@ -169,16 +183,25 @@ export default function RestaurantDetails() {
                                 </View>
                             </ScrollView>
 
-                            <TouchableOpacity
-                                style={styles.modalAddButton}
-                                onPress={() => {
-                                    addToCart(selectedProduct, id as string);
-                                    setSelectedProduct(null);
-                                }}
-                            >
-                                <Plus size={24} color="white" />
-                                <Text style={styles.modalAddText}>Add to Cart - R{selectedProduct.price}</Text>
-                            </TouchableOpacity>
+                            {isAuthenticated ? (
+                                <TouchableOpacity
+                                    style={styles.modalAddButton}
+                                    onPress={() => {
+                                        addToCart(selectedProduct, id as string);
+                                        setSelectedProduct(null);
+                                    }}
+                                >
+                                    <Plus size={24} color="white" />
+                                    <Text style={styles.modalAddText}>Add to Cart - R{selectedProduct.price}</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <TouchableOpacity
+                                    style={[styles.modalAddButton, { backgroundColor: '#334155' }]}
+                                    onPress={() => router.push('/(auth)/sign-in')} // Assuming auth route exists, though strict nav might fail. Better to just show text.
+                                >
+                                    <Text style={styles.modalAddText}>Login to Order</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                     </View>
                 </View>

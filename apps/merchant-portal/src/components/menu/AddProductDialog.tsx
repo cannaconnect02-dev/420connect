@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Loader2, Upload, X, Image as ImageIcon } from "lucide-react";
+import { Plus, Loader2, Upload, X, Image as ImageIcon, Info } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export function AddProductDialog({ onProductAdded }: { onProductAdded: () => void }) {
@@ -14,11 +14,12 @@ export function AddProductDialog({ onProductAdded }: { onProductAdded: () => voi
     const [loading, setLoading] = useState(false);
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [markupPercent, setMarkupPercent] = useState(20); // Default 20%
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [formData, setFormData] = useState({
         name: "",
         description: "",
-        price: "",
+        price: "", // This is now Base Price (Cost)
         category: "flower",
         stock_quantity: "",
         unit: "g",
@@ -27,6 +28,35 @@ export function AddProductDialog({ onProductAdded }: { onProductAdded: () => voi
         strain_type: "hybrid",
         is_available: true
     });
+
+    useEffect(() => {
+        if (open) {
+            fetchMarkup();
+        }
+    }, [open]);
+
+    const fetchMarkup = async () => {
+        const { data } = await supabase
+            .from('settings')
+            .select('value')
+            .eq('key', 'global_markup_percent')
+            .single();
+
+        if (data?.value?.percent) {
+            setMarkupPercent(Number(data.value.percent));
+        }
+    };
+
+    const calculateCustomerPrice = (basePrice: string) => {
+        if (!basePrice) return "0.00";
+        const base = parseFloat(basePrice);
+        if (isNaN(base)) return "0.00";
+
+        const withMarkup = base + (base * (markupPercent / 100));
+        // Round up to nearest 5
+        const rounded = Math.ceil(withMarkup / 5) * 5;
+        return rounded.toFixed(2);
+    };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -123,7 +153,8 @@ export function AddProductDialog({ onProductAdded }: { onProductAdded: () => voi
                 store_id: store.id,
                 name: formData.name,
                 description: formData.description,
-                price: parseFloat(formData.price),
+                base_price: parseFloat(formData.price), // Insert as base_price
+                // price: ... trigger will set this
                 category: formData.category,
                 stock_quantity: parseInt(formData.stock_quantity),
                 unit: formData.unit,
@@ -256,32 +287,43 @@ export function AddProductDialog({ onProductAdded }: { onProductAdded: () => voi
                         <Textarea id="description" name="description" value={formData.description} onChange={handleChange} className="bg-slate-950 border-white/10" />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
-                        <div className="grid gap-2">
-                            <Label htmlFor="price">Price ($)</Label>
-                            <Input id="price" name="price" type="number" step="0.01" value={formData.price} onChange={handleChange} required className="bg-slate-950 border-white/10" />
+                    <div className="bg-slate-800/50 p-4 rounded-lg border border-white/5 space-y-4">
+                        <div className="flex items-center gap-2 text-blue-400 text-sm mb-2">
+                            <Info size={16} />
+                            <span className="font-semibold">Pricing Calculator</span>
                         </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="stock">Stock Qty</Label>
-                            <Input id="stock" name="stock_quantity" type="number" value={formData.stock_quantity} onChange={handleChange} required className="bg-slate-950 border-white/10" />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="unit">Unit</Label>
-                            <Select value={formData.unit} onValueChange={(val) => setFormData({ ...formData, unit: val })}>
-                                <SelectTrigger className="bg-slate-950 border-white/10">
-                                    <SelectValue placeholder="Unit" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="g">Gram (g)</SelectItem>
-                                    <SelectItem value="oz">Ounce (oz)</SelectItem>
-                                    <SelectItem value="unit">Piece/Unit</SelectItem>
-                                    <SelectItem value="ml">Milliliter (ml)</SelectItem>
-                                </SelectContent>
-                            </Select>
+
+                        <div className="grid grid-cols-2 gap-6">
+                            <div className="grid gap-2">
+                                <Label htmlFor="price" className="text-green-400">Your Cost (Base Price)</Label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-2.5 text-slate-400">R</span>
+                                    <Input
+                                        id="price"
+                                        name="price"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={formData.price}
+                                        onChange={handleChange}
+                                        required
+                                        className="bg-slate-950 border-white/10 pl-8"
+                                        placeholder="0.00"
+                                    />
+                                </div>
+                                <p className="text-xs text-slate-400">Enter the amount you want to earn.</p>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label className="text-slate-300">Customer Pays (Approx)</Label>
+                                <div className="h-10 px-3 py-2 bg-slate-800 rounded-md border border-white/10 text-white font-medium flex items-center">
+                                    R {calculateCustomerPrice(formData.price)}
+                                </div>
+                                <p className="text-xs text-slate-500">Includes platform markup.</p>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
                             <Label htmlFor="thc">THC %</Label>
                             <Input id="thc" name="thc_percentage" type="number" step="0.1" value={formData.thc_percentage} onChange={handleChange} className="bg-slate-950 border-white/10" />

@@ -37,7 +37,10 @@ export default function OrdersScreen() {
 
     const fetchActiveOrders = async () => {
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
+        if (!session) {
+            clearCart(); // Clear local cart if not authenticated
+            return;
+        }
 
         const { data } = await supabase
             .from('orders')
