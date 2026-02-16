@@ -12,6 +12,7 @@ export {
 
 import { CartProvider } from '../lib/CartContext';
 import { PaystackProvider } from 'react-native-paystack-webview';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function RootLayout() {
     const [session, setSession] = useState<Session | null>(null);
@@ -152,12 +153,14 @@ export default function RootLayout() {
     }, [session, segments, initialized, addressConfirmed, phoneVerified, isChecking, isPasswordRecovery]);
 
     return (
-        <ThemeProvider value={DarkTheme}>
-            <PaystackProvider publicKey={process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || 'pk_test_placeholder'} currency="ZAR">
-                <CartProvider>
-                    <Slot />
-                </CartProvider>
-            </PaystackProvider>
-        </ThemeProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+            <ThemeProvider value={DarkTheme}>
+                <PaystackProvider publicKey={process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || 'pk_test_placeholder'} currency="ZAR">
+                    <CartProvider>
+                        <Slot />
+                    </CartProvider>
+                </PaystackProvider>
+            </ThemeProvider>
+        </GestureHandlerRootView>
     );
 }

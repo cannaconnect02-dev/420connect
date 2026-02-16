@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 
 let googleMapsLoadPromise: Promise<void> | null = null;
 let isLoaded = false;
@@ -23,11 +22,10 @@ export function useGoogleMaps() {
 
         googleMapsLoadPromise = (async () => {
             try {
-                // Fetch API key from edge function
-                const { data, error: fetchError } = await supabase.functions.invoke('get-google-maps-key');
+                const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-                if (fetchError || !data?.apiKey) {
-                    throw new Error(fetchError?.message || 'Failed to fetch Google Maps API key');
+                if (!apiKey) {
+                    throw new Error('Google Maps API key not configured (VITE_GOOGLE_MAPS_API_KEY)');
                 }
 
                 // Load Google Maps script
@@ -38,7 +36,7 @@ export function useGoogleMaps() {
                     }
 
                     const script = document.createElement('script');
-                    script.src = `https://maps.googleapis.com/maps/api/js?key=${data.apiKey}&libraries=places`;
+                    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
                     script.async = true;
                     script.defer = true;
 
@@ -69,3 +67,4 @@ export function useGoogleMaps() {
 
     return { loaded, error };
 }
+

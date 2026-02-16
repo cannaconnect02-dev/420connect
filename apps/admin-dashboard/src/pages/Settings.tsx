@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Settings as SettingsIcon, Save, RefreshCw, AlertCircle, Truck } from 'lucide-react';
+import { Settings as SettingsIcon, Save, RefreshCw, AlertCircle, Truck, Clock } from 'lucide-react';
 
 export default function Settings() {
     const [markup, setMarkup] = useState<number>(20);
     // Delivery Settings
     const [baseRate, setBaseRate] = useState<number>(30);
     const [threshold, setThreshold] = useState<number>(5);
+    const [maxDistance, setMaxDistance] = useState<number>(35);
     const [extendedRate, setExtendedRate] = useState<number>(2.5);
+    // Order Settings
+    const [matchingWindow, setMatchingWindow] = useState<number>(300);
 
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -23,7 +26,7 @@ export default function Settings() {
             const { data, error } = await supabase
                 .from('settings')
                 .select('key, value')
-                .in('key', ['global_markup_percent', 'delivery_base_rate', 'delivery_threshold_km', 'delivery_extended_price']);
+                .in('key', ['global_markup_percent', 'delivery_base_rate', 'delivery_threshold_km', 'delivery_extended_price', 'max_delivery_distance_km', 'matching_window_seconds']);
 
             if (error) {
                 console.error('Error fetching settings:', error);
@@ -43,6 +46,14 @@ export default function Settings() {
                             break;
                         case 'delivery_extended_price':
                             setExtendedRate(Number(setting.value?.rate || 2.5));
+                            break;
+                        case 'max_delivery_distance_km':
+                            // Handle both { value: 35 } (migration) and { km: 35 } (consistency)
+                            const val = setting.value?.km ?? setting.value?.value ?? 35;
+                            setMaxDistance(Number(val));
+                            break;
+                        case 'matching_window_seconds':
+                            setMatchingWindow(Number(setting.value?.seconds || 300));
                             break;
                     }
                 });
@@ -84,6 +95,7 @@ export default function Settings() {
             const updates = [
                 { key: 'delivery_base_rate', value: { amount: baseRate } },
                 { key: 'delivery_threshold_km', value: { km: threshold } },
+                { key: 'max_delivery_distance_km', value: { km: maxDistance } },
                 { key: 'delivery_extended_price', value: { rate: extendedRate } }
             ];
 
@@ -96,6 +108,28 @@ export default function Settings() {
             setMessage({ type: 'success', text: 'Delivery settings saved successfully.' });
         } catch (error: any) {
             setMessage({ type: 'error', text: error.message || 'Failed to save delivery settings.' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleSaveOrderSettings = async () => {
+        setSaving(true);
+        setMessage(null);
+
+        try {
+            const { error } = await supabase
+                .from('settings')
+                .upsert({
+                    key: 'matching_window_seconds',
+                    value: { seconds: matchingWindow }
+                }, { onConflict: 'key' });
+
+            if (error) throw error;
+
+            setMessage({ type: 'success', text: 'Order settings saved successfully.' });
+        } catch (error: any) {
+            setMessage({ type: 'error', text: error.message || 'Failed to save order settings.' });
         } finally {
             setSaving(false);
         }
@@ -235,6 +269,58 @@ export default function Settings() {
                 </div>
             </div>
 
+            {/* Order Settings Section */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-2xl">
+                <div className="flex items-center gap-2 mb-6 text-purple-400 pb-2 border-b border-slate-800">
+                    <Clock className="w-5 h-5" />
+                    <h2 className="text-xl font-semibold text-white">Order Configuration</h2>
+                </div>
+
+                <div className="space-y-6">
+                    <div>
+                        <div className="flex justify-between mb-2">
+                            <label className="text-slate-300 font-medium">Matching Window (Seconds)</label>
+                            <span className="text-white font-bold">{Math.floor(matchingWindow / 60)}m {matchingWindow % 60}s</span>
+                        </div>
+                        <p className="text-sm text-slate-500 mb-4">
+                            Time allowed for finding a store before the order is refunded.
+                        </p>
+                        <div className="flex gap-4 items-center">
+                            <input
+                                type="range"
+                                min="60"
+                                max="1800"
+                                step="30"
+                                value={matchingWindow}
+                                onChange={(e) => setMatchingWindow(Number(e.target.value))}
+                                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                            />
+                            <input
+                                type="number"
+                                value={matchingWindow}
+                                onChange={(e) => setMatchingWindow(Number(e.target.value))}
+                                className="bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-white w-24 focus:outline-none focus:border-purple-500"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-800 flex items-center gap-4">
+                        <button
+                            onClick={handleSaveOrderSettings}
+                            disabled={saving || recalculating}
+                            className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                        >
+                            {saving ? (
+                                <RefreshCw className="animate-spin w-5 h-5" />
+                            ) : (
+                                <Save className="w-5 h-5" />
+                            )}
+                            Save Order Settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             {/* Delivery Section */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-2xl">
                 <div className="flex items-center gap-2 mb-6 text-green-400 pb-2 border-b border-slate-800">
@@ -244,6 +330,32 @@ export default function Settings() {
 
                 <div className="space-y-6">
                     <div className="space-y-6 bg-slate-950/30 p-4 rounded-lg border border-slate-800">
+                        {/* Max Delivery Distance */}
+                        <div>
+                            <div className="flex justify-between mb-2">
+                                <label className="text-slate-300 font-medium">Max Delivery Radius (km)</label>
+                                <span className="text-white font-bold">{maxDistance} km</span>
+                            </div>
+                            <div className="flex gap-4 items-center">
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="200"
+                                    step="1"
+                                    value={maxDistance}
+                                    onChange={(e) => setMaxDistance(Number(e.target.value))}
+                                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                                />
+                                <input
+                                    type="number"
+                                    value={maxDistance}
+                                    onChange={(e) => setMaxDistance(Number(e.target.value))}
+                                    className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white w-20 text-center"
+                                />
+                            </div>
+                            <p className="text-xs text-slate-500 mt-1">Maximum distance for delivery orders.</p>
+                        </div>
+
                         {/* Base Rate */}
                         <div>
                             <div className="flex justify-between mb-2">

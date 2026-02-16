@@ -71,6 +71,7 @@ export default function Orders() {
     useEffect(() => {
         if (!storeId) return;
 
+        console.log(`Subscribing to orders for store: ${storeId}`);
         const channel = supabase
             .channel('orders-kanban')
             .on(
@@ -81,20 +82,33 @@ export default function Orders() {
                     table: 'orders',
                     filter: `store_id=eq.${storeId}`,
                 },
-                (payload) => {
+                async (payload) => {
+                    console.log('Realtime event received:', payload);
+
                     if (payload.eventType === 'INSERT') {
-                        const newOrder = payload.new as Order;
-                        // Only add if it falls within the selected date
-                        const orderDate = new Date(newOrder.created_at).toISOString().split('T')[0];
+                        const newOrderRaw = payload.new as Order;
+                        // Only add if it falls within the selected date (or is today, if we wanna be smart)
+                        const orderDate = new Date(newOrderRaw.created_at).toISOString().split('T')[0];
+
                         if (orderDate === selectedDate) {
-                            setAllOrders(prev => [
-                                {
-                                    ...newOrder,
-                                    customer_name: newOrder.customer_name || `Customer ${newOrder.id.slice(0, 3).toUpperCase()}`,
-                                    items_count: newOrder.items_count ?? 1,
-                                },
-                                ...prev,
-                            ]);
+                            // Fetch full details including items
+                            const { data: fullOrder } = await supabase
+                                .from('orders')
+                                .select('*, order_items(id, quantity)')
+                                .eq('id', newOrderRaw.id)
+                                .single();
+
+                            if (fullOrder) {
+                                const enrichedNewOrder = {
+                                    ...fullOrder,
+                                    customer_name: fullOrder.customer_name || `Customer ${fullOrder.id.slice(0, 3).toUpperCase()}`,
+                                    items_count: Array.isArray(fullOrder.order_items)
+                                        ? fullOrder.order_items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0)
+                                        : 0,
+                                };
+
+                                setAllOrders(prev => [enrichedNewOrder, ...prev]);
+                            }
                         }
                     } else if (payload.eventType === 'UPDATE') {
                         const updated = payload.new as Order;
@@ -107,9 +121,12 @@ export default function Orders() {
                     }
                 }
             )
-            .subscribe();
+            .subscribe((status, err) => {
+                console.log(`Subscription status for store ${storeId}:`, status, err);
+            });
 
         return () => {
+            console.log('Unsubscribing from orders');
             supabase.removeChannel(channel);
         };
     }, [storeId, selectedDate]);

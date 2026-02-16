@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Image, ActivityIndicator } from 'react-native';
 import { useCart } from '../../lib/CartContext';
-import { Trash2, ShoppingBag, CheckCircle, Clock, Package, MapPin, Star, Plus, Minus } from 'lucide-react-native';
+import { Trash2, ShoppingBag, CheckCircle, Clock, Package, MapPin, Star, Plus, Minus, XCircle } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useState, useEffect } from 'react';
 import DriverRatingModal from '../components/DriverRatingModal';
@@ -161,6 +161,8 @@ export default function OrdersScreen() {
             case 'ready_for_pickup': return { color: '#10b981', icon: CheckCircle, label: 'Ready for Driver' }; // Green
             case 'picked_up': return { color: '#8b5cf6', icon: MapPin, label: 'Driver on the way' }; // Purple
             case 'delivered': return { color: '#64748b', icon: CheckCircle, label: 'Delivered' }; // Slate
+            case 'cancelled': return { color: '#ef4444', icon: XCircle, label: 'Cancelled' }; // Red
+            case 'rejected': return { color: '#ef4444', icon: XCircle, label: 'Store Declined' }; // Red
             default: return { color: '#94a3b8', icon: Clock, label: status };
         }
     };

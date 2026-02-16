@@ -30,6 +30,7 @@ import { StoreAddressAutocomplete } from '@/components/store/StoreAddressAutocom
 import type { Json } from '@/integrations/supabase/types';
 import { format } from 'date-fns';
 
+
 interface DayHours {
     open: string;
     close: string;
@@ -84,7 +85,7 @@ const DEFAULT_HOURS: OperatingHours = {
 export default function Settings() {
     const { user, hasRole, requestRole } = useAuth();
     const { toast } = useToast();
-    const { loaded: googleMapsLoaded } = useGoogleMaps();
+    const { loaded: googleMapsLoaded, error: googleMapsError } = useGoogleMaps();
     const [store, setStore] = useState<StoreData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -675,10 +676,16 @@ export default function Settings() {
                                     onChange={(e) => setStore(prev => prev ? { ...prev, address: e.target.value } : null)}
                                     required
                                 />
-                                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                    Loading address autocomplete...
-                                </p>
+                                {googleMapsError ? (
+                                    <p className="text-xs text-amber-500">
+                                        Address autocomplete unavailable. You can still type your address manually.
+                                    </p>
+                                ) : (
+                                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        Loading address autocomplete...
+                                    </p>
+                                )}
                             </div>
                         )}
 

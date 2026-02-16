@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Image } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { Package, Clock, CheckCircle, ChefHat, Truck, Navigation, XCircle, MapPin } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -35,9 +35,13 @@ export default function TrackScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    useEffect(() => {
-        fetchOrders();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            fetchOrders();
+            // Optional cleanup if needed (e.g. canceling fetch)
+            return () => { };
+        }, [])
+    );
 
     async function fetchOrders() {
         try {
@@ -57,7 +61,7 @@ export default function TrackScreen() {
                     stores:store_id (name, image_url)
                 `)
                 .eq('customer_id', user.id)
-                .not('status', 'in', '(delivered,cancelled)')
+                .not('status', 'in', '(delivered)')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MapPin, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { cn } from '@/lib/utils';
 
 interface StoreAddressAutocompleteProps {
     value: string;
@@ -19,6 +19,16 @@ export function StoreAddressAutocomplete({
     const [error, setError] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+    const onChangeRef = useRef(onChange);
+    onChangeRef.current = onChange;
+
+    // Sync the input DOM value when the parent's value prop changes externally
+    // (e.g. on initial load or after a place_changed event updates state)
+    useEffect(() => {
+        if (inputRef.current && inputRef.current.value !== value) {
+            inputRef.current.value = value;
+        }
+    }, [value]);
 
     useEffect(() => {
         let retryCount = 0;
@@ -39,7 +49,11 @@ export function StoreAddressAutocomplete({
                         if (place?.formatted_address && place?.geometry?.location) {
                             const lat = place.geometry.location.lat();
                             const lng = place.geometry.location.lng();
-                            onChange(place.formatted_address, lat, lng);
+                            // Update the input DOM value to match the formatted address
+                            if (inputRef.current) {
+                                inputRef.current.value = place.formatted_address;
+                            }
+                            onChangeRef.current(place.formatted_address, lat, lng);
                         }
                     });
 
@@ -66,7 +80,13 @@ export function StoreAddressAutocomplete({
                 google.maps.event.clearInstanceListeners(autocompleteRef.current);
             }
         };
-    }, [onChange]);
+    }, []);
+
+    const handleManualChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        // When the user manually types, update the parent with the new text
+        // but preserve existing coordinates (they'll be updated when a place is selected)
+        onChangeRef.current(e.target.value, null, null);
+    };
 
     return (
         <div className="space-y-2">
@@ -75,14 +95,20 @@ export function StoreAddressAutocomplete({
                 Address
             </Label>
             <div className="relative">
-                <Input
+                {/* Uncontrolled input: uses defaultValue + ref so Google Maps
+                    Autocomplete can freely update the DOM value when a place
+                    is selected, without React overriding it. */}
+                <input
                     ref={inputRef}
                     id="address"
-                    value={value}
-                    onChange={(e) => onChange(e.target.value, null, null)}
+                    defaultValue={value}
+                    onChange={handleManualChange}
                     placeholder="Start typing your store address..."
                     required
-                    className={hasCoordinates ? 'pr-10' : ''}
+                    className={cn(
+                        "flex h-12 w-full rounded-xl bg-slate-950 border border-slate-800 px-4 py-3 text-sm text-white ring-offset-background placeholder:text-slate-500 focus-visible:outline-none focus-visible:border-green-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                        hasCoordinates ? 'pr-10' : ''
+                    )}
                 />
                 {isLoading && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
