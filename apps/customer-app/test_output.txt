@@ -1,0 +1,217 @@
+
+> customer-app@1.0.0 test
+> jest __tests__/checkout-flow.test.tsx
+
+  console.log
+    handlePaymentSuccess called with ref: PAY_REF_123
+
+      at log (app/checkout.tsx:139:17)
+
+  console.log
+    User: user_123 Address: undefined
+
+      at log (app/checkout.tsx:142:21)
+
+FAIL __tests__/checkout-flow.test.tsx (11.489 s)
+  Checkout Flow
+    ✕ renders checkout details correctly (1030 ms)
+    ✓ triggers Paystack checkout when Pay button is pressed (89 ms)
+    ✕ creates order and clears cart on successful payment (10091 ms)
+    ✓ disables pay button if address is missing (56 ms)
+
+  ● Checkout Flow › renders checkout details correctly
+
+    Unable to find an element with text: Burger
+
+    [36m<View>[39m
+      [36m<View>[39m
+        [36m<View[39m
+          [33maccessible[39m=[32m{true}[39m
+        [36m>[39m
+          [36m<ArrowLeft />[39m
+        [36m</View>[39m
+        [36m<Text>[39m
+          [0mCheckout[0m
+        [36m</Text>[39m
+        [36m<View />[39m
+      [36m</View>[39m
+      [36m<RCTScrollView>[39m
+        [36m<View>[39m
+          [36m<View>[39m
+            [36m<Text>[39m
+              [0mDelivery Address[0m
+            [36m</Text>[39m
+            [36m<View>[39m
+              [36m<View>[39m
+                [36m<View>[39m
+                  [36m<MapPin />[39m
+                [36m</View>[39m
+                [36m<View>[39m
+                  [36m<Text>[39m
+                    [0mHome[0m
+                  [36m</Text>[39m
+                  [36m<Text>[39m
+                    [0m123 Main St[0m
+                  [36m</Text>[39m
+                  [36m<Text>[39m
+                    [0mCape Town[0m
+                    [0m, [0m
+                    [0m8001[0m
+                  [36m</Text>[39m
+                [36m</View>[39m
+              [36m</View>[39m
+              [36m<View[39m
+                [33maccessible[39m=[32m{true}[39m
+              [36m>[39m
+                [36m<Text>[39m
+                  [0mEdit[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+          [36m<View>[39m
+            [36m<Text>[39m
+              [0mOrder Summary[0m
+            [36m</Text>[39m
+            [36m<View>[39m
+              [36m<View>[39m
+                [36m<Text>[39m
+                  [36m<Text>[39m
+                    [0m2[0m
+                    [0mx[0m
+                  [36m</Text>[39m
+                  [0m [0m
+                  [0mBurger[0m
+                [36m</Text>[39m
+                [36m<Text>[39m
+                  [0mR[0m
+                  [0m200.00[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+              [36m<View>[39m
+                [36m<Text>[39m
+                  [36m<Text>[39m
+                    [0m1[0m
+                    [0mx[0m
+                  [36m</Text>[39m
+                  [0m [0m
+                  [0mFries[0m
+                [36m</Text>[39m
+                [36m<Text>[39m
+                  [0mR[0m
+                  [0m50.00[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+              [36m<View />[39m
+              [36m<View>[39m
+                [36m<Text>[39m
+                  [0mSubtotal[0m
+                [36m</Text>[39m
+                [36m<Text>[39m
+                  [0mR[0m
+                  [0m250.00[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+              [36m<View>[39m
+                [36m<Text>[39m
+                  [0mDelivery Fee[0m
+                [36m</Text>[39m
+                [36m<Text>[39m
+                  [0mR[0m
+                  [0m30.00[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+              [36m<View />[39m
+              [36m<View>[39m
+                [36m<Text>[39m
+                  [0mTotal[0m
+                [36m</Text>[39m
+                [36m<Text>[39m
+                  [0mR[0m
+                  [0m280.00[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+          [36m<View>[39m
+            [36m<Text>[39m
+              [0mPayment Method[0m
+            [36m</Text>[39m
+            [36m<View>[39m
+              [36m<View>[39m
+                [36m<CreditCard />[39m
+                [36m<Text>[39m
+                  [0mPaystack Secure Payment[0m
+                [36m</Text>[39m
+                [36m<ShieldCheck />[39m
+              [36m</View>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+        [36m</View>[39m
+      [36m</RCTScrollView>[39m
+      [36m<View>[39m
+        [36m<View>[39m
+          [36m<Lock />[39m
+          [36m<Text>[39m
+            [0mPayments are secure and encrypted[0m
+          [36m</Text>[39m
+        [36m</View>[39m
+        [36m<View[39m
+          [33maccessibilityState[39m=[32m{
+            {
+              "disabled": false,
+            }
+          }[39m
+          [33maccessible[39m=[32m{true}[39m
+          [33mtestID[39m=[32m"pay-button"[39m
+        [36m>[39m
+          [36m<View>[39m
+            [36m<Text>[39m
+              [0mPay R[0m
+              [0m280.00[0m
+            [36m</Text>[39m
+            [36m<ChevronRight />[39m
+          [36m</View>[39m
+        [36m</View>[39m
+      [36m</View>[39m
+    [36m</View>[39m
+
+      121 |         const { getByText, getAllByText } = render(<CheckoutScreen />);
+      122 |
+    > 123 |         await waitFor(() => {
+          |                      ^
+      124 |             expect(getByText('Checkout')).toBeTruthy();
+      125 |             expect(getByText('123 Main St')).toBeTruthy();
+      126 |             expect(getByText('Burger')).toBeTruthy();
+
+      at Object.<anonymous> (__tests__/checkout-flow.test.tsx:123:22)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.<anonymous> (node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+
+  ● Checkout Flow › creates order and clears cart on successful payment
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    Expected: ObjectContaining {"customer_id": "user_123", "payment_ref": "PAY_REF_123", "status": "pending", "store_id": "store_123", "total_amount": 280}
+
+    Number of calls: 0
+
+      161 |         });
+      162 |
+    > 163 |         await waitFor(() => {
+          |                      ^
+      164 |             // Verify Order Creation
+      165 |             expect(supabase.from).toHaveBeenCalledWith('orders');
+      166 |             expect(supabase.from('orders').insert).toHaveBeenCalledWith(expect.objectContaining({
+
+      at Object.<anonymous> (__tests__/checkout-flow.test.tsx:163:22)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 2 passed, 4 total
+Snapshots:   0 total
+Time:        11.581 s, estimated 12 s
+Ran all test suites matching __tests__/checkout-flow.test.tsx.

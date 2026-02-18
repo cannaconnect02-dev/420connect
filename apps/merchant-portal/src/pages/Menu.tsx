@@ -1,12 +1,19 @@
 import { useState } from "react";
-import { ProductTable } from "@/components/menu/ProductTable";
+import { ProductTable, type Product } from "@/components/menu/ProductTable";
 import { AddProductDialog } from "@/components/menu/AddProductDialog";
+import { EditProductDialog } from "@/components/menu/EditProductDialog";
 
 export default function Menu() {
     const [refreshKey, setRefreshKey] = useState(0);
+    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
     const handleProductAdded = () => {
         setRefreshKey(prev => prev + 1);
+    };
+
+    const handleProductUpdated = () => {
+        setRefreshKey(prev => prev + 1);
+        setEditingProduct(null);
     };
 
     return (
@@ -19,7 +26,17 @@ export default function Menu() {
                 <AddProductDialog onProductAdded={handleProductAdded} />
             </div>
 
-            <ProductTable key={refreshKey} />
+            <ProductTable
+                key={refreshKey}
+                onEditProduct={setEditingProduct}
+            />
+
+            <EditProductDialog
+                product={editingProduct}
+                open={!!editingProduct}
+                onOpenChange={(open) => !open && setEditingProduct(null)}
+                onProductUpdated={handleProductUpdated}
+            />
         </div>
     );
 }

@@ -1,12 +1,16 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { supabase } from '../../lib/supabase';
-import { useState, useEffect } from 'react';
-import { User, Mail, CreditCard, MapPin, LogOut, Edit2 } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useState, useEffect, useCallback } from 'react';
+import { User, Mail, Phone, MapPin, LogOut, Edit2 } from 'lucide-react-native';
 
 interface UserProfile {
+    first_name: string | null;
+    surname: string | null;
+    preferred_name: string | null;
     full_name: string | null;
     email: string;
+    phone_number: string | null;
     address: string | null;
     address_confirmed: boolean;
     created_at: string;
@@ -16,33 +20,54 @@ export default function ProfileScreen() {
     const router = useRouter();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
-    const [membershipNumber, setMembershipNumber] = useState('');
 
-    useEffect(() => {
-        fetchProfile();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            fetchProfile();
+        }, [])
+    );
 
     async function fetchProfile() {
         try {
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
+            if (!user) throw new Error('No user on the session!');
 
-            const { data } = await supabase
+            const { data, error, status } = await supabase
                 .from('profiles')
-                .select('full_name, address, address_confirmed, created_at')
+                .select('first_name, surname, preferred_name, full_name, phone_number, address_confirmed, created_at')
                 .eq('id', user.id)
                 .single();
 
-            setProfile({
-                full_name: data?.full_name || null,
-                email: user.email || '',
-                address: data?.address || null,
-                address_confirmed: data?.address_confirmed || false,
-                created_at: data?.created_at || user.created_at
-            });
+            if (error && status !== 406) {
+                throw error;
+            }
 
-            // Generate membership number from user ID (first 8 chars uppercase)
-            setMembershipNumber(`420C-${user.id.substring(0, 8).toUpperCase()}`);
+            if (data) {
+                // Fetch address
+                const { data: addressData } = await supabase
+                    .from('user_addresses')
+                    .select('address_line1, city')
+                    .eq('user_id', user.id)
+                    .eq('is_default', true)
+                    .single();
+
+                let displayAddress = null;
+                if (addressData) {
+                    displayAddress = `${addressData.address_line1}, ${addressData.city}`;
+                }
+
+                setProfile({
+                    first_name: data.first_name,
+                    surname: data.surname,
+                    preferred_name: data.preferred_name,
+                    full_name: data.full_name,
+                    email: user.email || '', // Retain email from original
+                    phone_number: data.phone_number,
+                    address: displayAddress,
+                    address_confirmed: data.address_confirmed || false,
+                    created_at: new Date(data.created_at).toLocaleDateString(),
+                });
+            }
         } catch (error) {
             console.error('Error fetching profile:', error);
         } finally {
@@ -71,22 +96,49 @@ export default function ProfileScreen() {
                 </Text>
             </View>
 
-            {/* Profile Info Card */}
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Account Details</Text>
 
+                {/* First Name */}
                 <View style={styles.infoRow}>
                     <View style={styles.iconContainer}>
                         <User size={20} color="#94a3b8" />
                     </View>
                     <View style={styles.infoContent}>
-                        <Text style={styles.infoLabel}>Full Name</Text>
-                        <Text style={styles.infoValue}>{profile?.full_name || 'Not set'}</Text>
+                        <Text style={styles.infoLabel}>First Name</Text>
+                        <Text style={styles.infoValue}>{profile?.first_name || 'Not set'}</Text>
                     </View>
                 </View>
 
                 <View style={styles.divider} />
 
+                {/* Surname */}
+                <View style={styles.infoRow}>
+                    <View style={styles.iconContainer}>
+                        <User size={20} color="#94a3b8" />
+                    </View>
+                    <View style={styles.infoContent}>
+                        <Text style={styles.infoLabel}>Surname</Text>
+                        <Text style={styles.infoValue}>{profile?.surname || 'Not set'}</Text>
+                    </View>
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* Preferred Name */}
+                <View style={styles.infoRow}>
+                    <View style={styles.iconContainer}>
+                        <User size={20} color="#94a3b8" />
+                    </View>
+                    <View style={styles.infoContent}>
+                        <Text style={styles.infoLabel}>Preferred Name</Text>
+                        <Text style={styles.infoValue}>{profile?.preferred_name || profile?.first_name || 'Not set'}</Text>
+                    </View>
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* Email */}
                 <View style={styles.infoRow}>
                     <View style={styles.iconContainer}>
                         <Mail size={20} color="#94a3b8" />
@@ -99,18 +151,20 @@ export default function ProfileScreen() {
 
                 <View style={styles.divider} />
 
+                {/* Cell Phone */}
                 <View style={styles.infoRow}>
                     <View style={styles.iconContainer}>
-                        <CreditCard size={20} color="#94a3b8" />
+                        <Phone size={20} color="#94a3b8" />
                     </View>
                     <View style={styles.infoContent}>
-                        <Text style={styles.infoLabel}>Membership Number</Text>
-                        <Text style={styles.infoValueHighlight}>{membershipNumber}</Text>
+                        <Text style={styles.infoLabel}>Cell Phone</Text>
+                        <Text style={styles.infoValue}>{profile?.phone_number || 'Not verified'}</Text>
                     </View>
                 </View>
 
                 <View style={styles.divider} />
 
+                {/* Delivery Address */}
                 <View style={styles.infoRow}>
                     <View style={styles.iconContainer}>
                         <MapPin size={20} color="#94a3b8" />
@@ -125,7 +179,7 @@ export default function ProfileScreen() {
                     </View>
                     <TouchableOpacity
                         style={styles.editButton}
-                        onPress={() => router.push('/address-confirmation')}
+                        onPress={() => router.push({ pathname: '/address-confirmation', params: { editing: 'true' } })}
                     >
                         <Edit2 size={16} color="#10b981" />
                     </TouchableOpacity>

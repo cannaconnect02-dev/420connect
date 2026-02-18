@@ -1,32 +1,21 @@
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Image, ActivityIndicator } from 'react-native';
 import { useCart } from '../../lib/CartContext';
-import { Trash2, ShoppingBag, CheckCircle, Clock, Package, MapPin, Star } from 'lucide-react-native';
+import { Trash2, ShoppingBag, CheckCircle, Clock, Package, MapPin, Star, Plus, Minus, XCircle } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useState, useEffect } from 'react';
 import DriverRatingModal from '../components/DriverRatingModal';
 
 // Distance calculation utility
-function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371; // Radius of the earth in km
-    const dLat = deg2rad(lat2 - lat1);
-    const dLon = deg2rad(lon2 - lon1);
-    const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-}
-
-function deg2rad(deg: number): number {
-    return deg * (Math.PI / 180);
-}
+import { getDistanceFromLatLonInKm } from '../../lib/utils';
 
 // Constants
 const MAX_DELIVERY_DISTANCE_KM = 35;
 
+import { useRouter } from 'expo-router';
+
 export default function OrdersScreen() {
-    const { items, removeFromCart, total, clearCart, restaurantId } = useCart();
+    const router = useRouter();
+    const { items, removeFromCart, incrementQuantity, decrementQuantity, total, clearCart, storeId } = useCart();
     const [placingOrder, setPlacingOrder] = useState(false);
     const [activeOrders, setActiveOrders] = useState<any[]>([]);
     const [ratingModalVisible, setRatingModalVisible] = useState(false);
@@ -48,11 +37,14 @@ export default function OrdersScreen() {
 
     const fetchActiveOrders = async () => {
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
+        if (!session) {
+            clearCart(); // Clear local cart if not authenticated
+            return;
+        }
 
         const { data } = await supabase
             .from('orders')
-            .select('*, restaurants(name)')
+            .select('*, stores(name)')
             .eq('customer_id', session.user.id)
             .order('created_at', { ascending: false });
 
@@ -62,49 +54,60 @@ export default function OrdersScreen() {
     const handleCheckout = async () => {
         setPlacingOrder(true);
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) throw new Error("Not logged in");
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                router.replace('/auth');
+                return;
+            }
 
-            // Get user's confirmed delivery location from profile
-            const { data: profile, error: profileError } = await supabase
+            const { data: profile } = await supabase
                 .from('profiles')
-                .select('delivery_lat, delivery_lng, address, address_confirmed')
-                .eq('id', session.user.id)
+                .select('address_confirmed')
+                .eq('id', user.id)
                 .single();
 
-            if (profileError || !profile) throw new Error("Could not fetch your profile");
-
-            // Check if address is confirmed
-            if (!profile.address_confirmed || !profile.delivery_lat || !profile.delivery_lng) {
+            if (!profile?.address_confirmed) {
                 throw new Error("Please confirm your delivery address before placing an order.");
             }
 
-            const customerLat = profile.delivery_lat;
-            const customerLng = profile.delivery_lng;
-            const customerAddress = profile.address || 'Address on file';
-
-            // 1. Fetch restaurant location for geofencing check
-            const { data: restaurant, error: restError } = await supabase
-                .from('restaurants')
-                .select('latitude, longitude, name')
-                .eq('id', restaurantId)
+            // Fetch address from user_addresses
+            const { data: addressData } = await supabase
+                .from('user_addresses')
+                .select('lat, lng, address_line1, city')
+                .eq('user_id', user.id)
+                .eq('is_default', true)
                 .single();
 
-            if (restError || !restaurant) throw new Error("Could not find restaurant details");
+            if (!addressData || !addressData.lat || !addressData.lng) {
+                throw new Error("Delivery address not found. Please update your address in profile.");
+            }
 
-            // Check if restaurant has location data
-            if (!restaurant.latitude || !restaurant.longitude) {
-                // Allow order if restaurant has no location (fallback)
-                console.log('Restaurant has no location data, allowing order');
+            const customerLat = addressData.lat;
+            const customerLng = addressData.lng;
+            const customerAddress = `${addressData.address_line1}, ${addressData.city}`;
+
+            // 1. Fetch store location for geofencing check
+            const { data: store, error: restError } = await supabase
+                .from('stores')
+                .select('latitude, longitude, name')
+                .eq('id', storeId)
+                .single();
+
+            if (restError || !store) throw new Error("Could not find store details");
+
+            // Check if store has location data
+            if (!store.latitude || !store.longitude) {
+                // Allow order if store has no location (fallback)
+                console.log('Store has no location data, allowing order');
             } else {
                 // 2. GEOFENCING CHECK - 35km limit
                 const distance = getDistanceFromLatLonInKm(
                     customerLat, customerLng,
-                    restaurant.latitude, restaurant.longitude
+                    store.latitude, store.longitude
                 );
 
                 if (distance > MAX_DELIVERY_DISTANCE_KM) {
-                    throw new Error(`Sorry, ${restaurant.name} is ${distance.toFixed(1)}km away. Maximum delivery distance is ${MAX_DELIVERY_DISTANCE_KM}km.`);
+                    throw new Error(`Sorry, ${store.name} is ${distance.toFixed(1)}km away. Maximum delivery distance is ${MAX_DELIVERY_DISTANCE_KM}km.`);
                 }
             }
 
@@ -112,8 +115,8 @@ export default function OrdersScreen() {
             const { data: order, error } = await supabase
                 .from('orders')
                 .insert({
-                    customer_id: session.user.id,
-                    restaurant_id: restaurantId,
+                    customer_id: user.id,
+                    store_id: storeId, // Renamed column
                     total_amount: total,
                     status: 'pending',
                     delivery_address: customerAddress,
@@ -139,7 +142,7 @@ export default function OrdersScreen() {
             if (itemsError) throw itemsError;
 
             // Success
-            Alert.alert("Order Placed!", `${restaurant.name} has received your order.\nDelivering to: ${customerAddress}`);
+            Alert.alert("Order Placed!", `${store.name} has received your order.\nDelivering to: ${customerAddress}`);
             clearCart();
             fetchActiveOrders();
 
@@ -158,6 +161,8 @@ export default function OrdersScreen() {
             case 'ready_for_pickup': return { color: '#10b981', icon: CheckCircle, label: 'Ready for Driver' }; // Green
             case 'picked_up': return { color: '#8b5cf6', icon: MapPin, label: 'Driver on the way' }; // Purple
             case 'delivered': return { color: '#64748b', icon: CheckCircle, label: 'Delivered' }; // Slate
+            case 'cancelled': return { color: '#ef4444', icon: XCircle, label: 'Cancelled' }; // Red
+            case 'rejected': return { color: '#ef4444', icon: XCircle, label: 'Store Declined' }; // Red
             default: return { color: '#94a3b8', icon: Clock, label: status };
         }
     };
@@ -166,85 +171,21 @@ export default function OrdersScreen() {
         return (
             <View style={styles.container}>
                 <View style={styles.header}>
-                    <Text style={styles.title}>Your Orders</Text>
+                    <Text style={styles.title}>Your Cart</Text>
                 </View>
 
-                {activeOrders.length === 0 ? (
-                    <View style={styles.emptyState}>
-                        {/* @ts-ignore */}
-                        <ShoppingBag size={64} color="#334155" />
-                        <Text style={styles.emptyText}>No active orders</Text>
-                        <Text style={styles.emptySubtext}>Go find some premium strains!</Text>
-                    </View>
-                ) : (
-                    <FlatList
-                        data={activeOrders}
-                        keyExtractor={i => i.id}
-                        contentContainerStyle={{ padding: 20 }}
-                        renderItem={({ item }) => {
-                            const { color, icon: Icon, label } = getStatusInfo(item.status);
-                            return (
-                                <View style={styles.orderCard}>
-                                    <View style={styles.orderHeader}>
-                                        <Text style={styles.orderRest}>{item.restaurants?.name}</Text>
-                                        <View style={[styles.statusBadge, { backgroundColor: `${color}20` }]}>
-                                            {/* @ts-ignore */}
-                                            <Icon size={12} color={color} />
-                                            <Text style={[styles.statusText, { color: color }]}>{label.toUpperCase()}</Text>
-                                        </View>
-                                    </View>
-                                    <View style={styles.progressBar}>
-                                        <View style={[styles.progressFill, {
-                                            width:
-                                                item.status === 'pending' ? '25%' :
-                                                    item.status === 'preparing' ? '50%' :
-                                                        item.status === 'ready_for_pickup' ? '75%' :
-                                                            item.status === 'picked_up' ? '90%' : '100%',
-                                            backgroundColor: color
-                                        }]} />
-                                    </View>
-                                    <View style={styles.orderMeta}>
-                                        <Text style={styles.orderDate}>{new Date(item.created_at).toLocaleDateString()} {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                                        <Text style={styles.orderTotal}>R{item.total_amount}</Text>
-                                    </View>
-                                    {/* Rate Driver Button for delivered orders */}
-                                    {item.status === 'delivered' && !item.rated_at && (
-                                        <TouchableOpacity
-                                            style={styles.rateDriverBtn}
-                                            onPress={() => {
-                                                setSelectedOrderForRating(item);
-                                                setRatingModalVisible(true);
-                                            }}
-                                        >
-                                            {/* @ts-ignore */}
-                                            <Star size={16} color="#fbbf24" />
-                                            <Text style={styles.rateDriverText}>Rate Driver</Text>
-                                        </TouchableOpacity>
-                                    )}
-                                    {item.status === 'delivered' && item.rated_at && (
-                                        <View style={styles.ratedBadge}>
-                                            {/* @ts-ignore */}
-                                            <Star size={14} color="#10b981" fill="#10b981" />
-                                            <Text style={styles.ratedText}>Rated {item.driver_rating}★</Text>
-                                        </View>
-                                    )}
-                                </View>
-                            );
-                        }}
-                    />
-                )}
-
-                {/* Driver Rating Modal */}
-                <DriverRatingModal
-                    visible={ratingModalVisible}
-                    onClose={() => {
-                        setRatingModalVisible(false);
-                        setSelectedOrderForRating(null);
-                    }}
-                    orderId={selectedOrderForRating?.id || ''}
-                    orderTotal={selectedOrderForRating?.total_amount || 0}
-                    onRatingSubmitted={fetchActiveOrders}
-                />
+                <View style={styles.emptyState}>
+                    {/* @ts-ignore */}
+                    <ShoppingBag size={64} color="#334155" />
+                    <Text style={styles.emptyText}>Your cart is empty</Text>
+                    <Text style={styles.emptySubtext}>Add items from a store to get started</Text>
+                    <TouchableOpacity
+                        style={styles.browseButton}
+                        onPress={() => router.push('/(tabs)')}
+                    >
+                        <Text style={styles.browseButtonText}>Browse Stores</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
         );
     }
@@ -264,12 +205,40 @@ export default function OrdersScreen() {
                 contentContainerStyle={{ padding: 20 }}
                 renderItem={({ item }) => (
                     <View style={styles.cartItem}>
+                        {item.image_url && (
+                            <Image
+                                source={{ uri: item.image_url }}
+                                style={{ width: 60, height: 60, borderRadius: 8, marginRight: 12 }}
+                            />
+                        )}
                         <View style={styles.itemInfo}>
                             <Text style={styles.itemName}>{item.name}</Text>
-                            <Text style={styles.itemPrice}>R{item.price} x {item.quantity}</Text>
+                            <Text style={styles.itemPrice}>R{item.price}</Text>
                         </View>
+
                         <View style={styles.itemActions}>
+                            <View style={styles.quantityControls}>
+                                <TouchableOpacity
+                                    onPress={() => decrementQuantity(item.id)}
+                                    style={styles.qtyBtn}
+                                >
+                                    {/* @ts-ignore */}
+                                    <Minus size={16} color="#94a3b8" />
+                                </TouchableOpacity>
+
+                                <Text style={styles.qtyText}>{item.quantity}</Text>
+
+                                <TouchableOpacity
+                                    onPress={() => incrementQuantity(item.id)}
+                                    style={styles.qtyBtn}
+                                >
+                                    {/* @ts-ignore */}
+                                    <Plus size={16} color="white" />
+                                </TouchableOpacity>
+                            </View>
+
                             <Text style={styles.itemTotal}>R{(item.price * item.quantity).toFixed(2)}</Text>
+
                             <TouchableOpacity onPress={() => removeFromCart(item.id)} style={styles.removeBtn}>
                                 {/* @ts-ignore */}
                                 <Trash2 size={18} color="#ef4444" />
@@ -286,14 +255,10 @@ export default function OrdersScreen() {
                 </View>
                 <TouchableOpacity
                     style={styles.checkoutBtn}
-                    onPress={handleCheckout}
+                    onPress={() => router.push('/checkout')}
                     disabled={placingOrder}
                 >
-                    {placingOrder ? (
-                        <ActivityIndicator color="white" />
-                    ) : (
-                        <Text style={styles.checkoutText}>Place Order</Text>
-                    )}
+                    <Text style={styles.checkoutText}>Checkout</Text>
                 </TouchableOpacity>
             </View>
         </View>
@@ -489,5 +454,41 @@ const styles = StyleSheet.create({
         color: '#10b981',
         fontWeight: '600',
         fontSize: 12,
+    },
+    quantityControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginRight: 16,
+        backgroundColor: '#0f172a',
+        padding: 4,
+        borderRadius: 8,
+    },
+    qtyBtn: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: '#334155',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    qtyText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 14,
+        minWidth: 20,
+        textAlign: 'center',
+    },
+    browseButton: {
+        backgroundColor: '#10b981',
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 12,
+        marginTop: 20,
+    },
+    browseButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 16,
     },
 });

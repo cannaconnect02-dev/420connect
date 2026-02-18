@@ -5,7 +5,8 @@ import {
     UtensilsCrossed,
     Users,
     LogOut,
-    Leaf
+    Leaf,
+    Settings
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
@@ -15,6 +16,7 @@ const navItems = [
     { icon: ClipboardList, label: 'Orders', path: '/orders' },
     { icon: UtensilsCrossed, label: 'Menu', path: '/menu' },
     { icon: Users, label: 'Members', path: '/members' },
+    { icon: Settings, label: 'Settings', path: '/settings' },
 ];
 
 export default function Layout() {

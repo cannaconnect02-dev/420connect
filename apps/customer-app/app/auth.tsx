@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, TextInput, TouchableOpacity, Text, Alert, KeyboardAvoidingView, Platform, ScrollView, StatusBar } from 'react-native';
+import { StyleSheet, View, TextInput, TouchableOpacity, Text, Alert, KeyboardAvoidingView, Platform, ScrollView, StatusBar, Modal, ActivityIndicator } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Stack, useRouter } from 'expo-router';
-import { ShoppingBag, Upload, CheckCircle, Eye, EyeOff, Calendar } from 'lucide-react-native';
-import * as DocumentPicker from 'expo-document-picker';
+import { ShoppingBag, Eye, EyeOff, Calendar, User } from 'lucide-react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { NanoTheme } from '../constants/nanobanana';
 
 export default function AuthScreen() {
@@ -17,18 +17,45 @@ export default function AuthScreen() {
     const [showPassword, setShowPassword] = useState(false);
 
     // Sign Up Fields
-    const [fullName, setFullName] = useState('');
-    const [dob, setDob] = useState('');
-    const [document, setDocument] = useState<any>(null);
+    const [firstName, setFirstName] = useState('');
+    const [surname, setSurname] = useState('');
+    const [preferredName, setPreferredName] = useState('');
+    const [dob, setDob] = useState<Date | null>(null);
+    const [showDatePicker, setShowDatePicker] = useState(false);
 
-    async function pickDocument() {
-        try {
-            Alert.alert("Document Upload", "Select a document to upload (Mock)");
-            setDocument({ name: "id_document.pdf" });
-        } catch (err) {
-            console.log('Document picker error', err);
+    // Calculate age from date
+    const calculateAge = (birthDate: Date): number => {
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const monthDiff = today.getMonth() - birthDate.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
         }
-    }
+        return age;
+    };
+
+    // Format date for display
+    const formatDate = (date: Date): string => {
+        return date.toLocaleDateString('en-ZA', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    };
+
+    // Format date for database storage
+    const formatDateForDB = (date: Date): string => {
+        return date.toISOString().split('T')[0]; // YYYY-MM-DD
+    };
+
+    const handleDateChange = (event: any, selectedDate?: Date) => {
+        if (Platform.OS === 'android') {
+            setShowDatePicker(false);
+        }
+        if (selectedDate) {
+            setDob(selectedDate);
+        }
+    };
 
     async function handleAuth() {
         setLoading(true);
@@ -40,37 +67,76 @@ export default function AuthScreen() {
                 });
                 if (error) throw error;
             } else {
+                // Validation
+                if (!firstName.trim() || !surname.trim()) {
+                    throw new Error('Please enter your first name and surname.');
+                }
+
+                if (!dob) {
+                    throw new Error('Please select your date of birth.');
+                }
+
                 // Age Verification
-                const birthDate = new Date(dob);
-                const today = new Date();
-                let age = today.getFullYear() - birthDate.getFullYear();
-                const monthDiff = today.getMonth() - birthDate.getMonth();
-                if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-                    age--;
+                const age = calculateAge(dob);
+                if (age < 18) {
+                    throw new Error('You must be 18+ years old to join.');
                 }
 
-                if (isNaN(age) || age < 18) {
-                    throw new Error("You must be 18+ years old to join.");
-                }
-
-                const { error } = await supabase.auth.signUp({
+                // Sign up with Supabase - this sends OTP email automatically
+                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
                     email,
                     password,
                     options: {
                         data: {
                             role: 'customer',
-                            full_name: fullName,
-                            dob: dob,
-                            has_document: !!document
+                            first_name: firstName,
+                            surname: surname,
+                            preferred_name: preferredName.trim() || firstName,
+                            dob: formatDateForDB(dob),
                         }
                     }
                 });
 
-                if (error) throw error;
-                Alert.alert('Success', 'Check your inbox for email verification!');
+                if (signUpError) throw signUpError;
+
+                const userId = signUpData.user?.id;
+                if (!userId) throw new Error('Registration failed. Please try again.');
+
+                // Navigate to OTP verification - Supabase already sent the email
+                router.push({
+                    pathname: '/otp-verification',
+                    params: { email, userId }
+                });
             }
         } catch (e: any) {
-            Alert.alert('Error', e.message);
+            if (e.message.includes('Email not confirmed')) {
+                // Handle unverified email
+                Alert.alert(
+                    'Email Not Verified',
+                    'Your email address has not been verified yet. We have sent you a new verification code.',
+                    [
+                        {
+                            text: 'OK',
+                            onPress: async () => {
+                                try {
+                                    await supabase.auth.resend({
+                                        type: 'signup',
+                                        email,
+                                    });
+                                    router.push({
+                                        pathname: '/otp-verification',
+                                        params: { email }
+                                    });
+                                } catch (resendError) {
+                                    console.log('Error resending code:', resendError);
+                                }
+                            }
+                        }
+                    ]
+                );
+            } else {
+                Alert.alert('Error', e.message);
+            }
         } finally {
             setLoading(false);
         }
@@ -85,6 +151,10 @@ export default function AuthScreen() {
             <Text style={styles.subtitle}>{isLogin ? 'Customer Portal' : 'Join the Community'}</Text>
         </View>
     );
+
+    // Calculate max date (18 years ago from today)
+    const maxDate = new Date();
+    maxDate.setFullYear(maxDate.getFullYear() - 18);
 
     return (
         <KeyboardAvoidingView
@@ -103,47 +173,111 @@ export default function AuthScreen() {
 
                         {!isLogin && (
                             <>
+                                {/* First Name */}
                                 <View style={styles.inputContainer}>
-                                    <Text style={styles.label}>Full Name</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="Jane Doe"
-                                        placeholderTextColor={NanoTheme.colors.textSecondary}
-                                        onChangeText={setFullName}
-                                        value={fullName}
-                                    />
-                                </View>
-
-                                <View style={styles.inputContainer}>
-                                    <Text style={styles.label}>Date of Birth (YYYY-MM-DD)</Text>
+                                    <Text style={styles.label}>First Name</Text>
                                     <View style={styles.iconInputWrapper}>
-                                        <Calendar size={20} color={NanoTheme.colors.textSecondary} style={styles.inputIcon} />
+                                        <User size={20} color={NanoTheme.colors.textSecondary} style={styles.inputIcon} />
                                         <TextInput
                                             style={[styles.input, styles.iconInput]}
-                                            placeholder="1995-04-20"
+                                            placeholder="John"
                                             placeholderTextColor={NanoTheme.colors.textSecondary}
-                                            onChangeText={setDob}
-                                            value={dob}
+                                            onChangeText={setFirstName}
+                                            value={firstName}
+                                            autoCapitalize="words"
                                         />
                                     </View>
                                 </View>
 
+                                {/* Surname */}
                                 <View style={styles.inputContainer}>
-                                    <Text style={styles.label}>ID Document (18+)</Text>
-                                    <TouchableOpacity style={styles.uploadButton} onPress={pickDocument}>
-                                        {document ? (
-                                            <View style={styles.uploadedContainer}>
-                                                <CheckCircle size={20} color={NanoTheme.colors.primary} />
-                                                <Text style={[styles.uploadedText, { color: NanoTheme.colors.primary }]}>{document.name}</Text>
-                                            </View>
-                                        ) : (
-                                            <View style={styles.uploadPlaceholder}>
-                                                <Upload size={20} color={NanoTheme.colors.textSecondary} />
-                                                <Text style={styles.uploadText}>Upload ID</Text>
-                                            </View>
-                                        )}
+                                    <Text style={styles.label}>Surname</Text>
+                                    <View style={styles.iconInputWrapper}>
+                                        <User size={20} color={NanoTheme.colors.textSecondary} style={styles.inputIcon} />
+                                        <TextInput
+                                            style={[styles.input, styles.iconInput]}
+                                            placeholder="Doe"
+                                            placeholderTextColor={NanoTheme.colors.textSecondary}
+                                            onChangeText={setSurname}
+                                            value={surname}
+                                            autoCapitalize="words"
+                                        />
+                                    </View>
+                                </View>
+
+                                {/* Preferred Name */}
+                                <View style={styles.inputContainer}>
+                                    <Text style={styles.label}>Preferred Name (optional)</Text>
+                                    <View style={styles.iconInputWrapper}>
+                                        <User size={20} color={NanoTheme.colors.textSecondary} style={styles.inputIcon} />
+                                        <TextInput
+                                            style={[styles.input, styles.iconInput]}
+                                            placeholder="How we should call you"
+                                            placeholderTextColor={NanoTheme.colors.textSecondary}
+                                            onChangeText={setPreferredName}
+                                            value={preferredName}
+                                            autoCapitalize="words"
+                                        />
+                                    </View>
+                                </View>
+
+                                {/* Date of Birth */}
+                                <View style={styles.inputContainer}>
+                                    <Text style={styles.label}>Date of Birth (18+)</Text>
+                                    <TouchableOpacity
+                                        style={styles.dateButton}
+                                        onPress={() => setShowDatePicker(true)}
+                                    >
+                                        <Calendar size={20} color={NanoTheme.colors.textSecondary} />
+                                        <Text style={[styles.dateText, !dob && styles.datePlaceholder]}>
+                                            {dob ? formatDate(dob) : 'Select your birth date'}
+                                        </Text>
                                     </TouchableOpacity>
                                 </View>
+
+                                {/* Date Picker Modal for iOS */}
+                                {Platform.OS === 'ios' && showDatePicker && (
+                                    <Modal
+                                        transparent
+                                        animationType="slide"
+                                        visible={showDatePicker}
+                                    >
+                                        <View style={styles.modalOverlay}>
+                                            <View style={styles.modalContent}>
+                                                <View style={styles.modalHeader}>
+                                                    <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                                                        <Text style={styles.modalCancel}>Cancel</Text>
+                                                    </TouchableOpacity>
+                                                    <Text style={styles.modalTitle}>Date of Birth</Text>
+                                                    <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                                                        <Text style={styles.modalDone}>Done</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+                                                <DateTimePicker
+                                                    value={dob || maxDate}
+                                                    mode="date"
+                                                    display="spinner"
+                                                    onChange={handleDateChange}
+                                                    maximumDate={maxDate}
+                                                    minimumDate={new Date(1920, 0, 1)}
+                                                    textColor={NanoTheme.colors.text}
+                                                />
+                                            </View>
+                                        </View>
+                                    </Modal>
+                                )}
+
+                                {/* Date Picker for Android */}
+                                {Platform.OS === 'android' && showDatePicker && (
+                                    <DateTimePicker
+                                        value={dob || maxDate}
+                                        mode="date"
+                                        display="default"
+                                        onChange={handleDateChange}
+                                        maximumDate={maxDate}
+                                        minimumDate={new Date(1920, 0, 1)}
+                                    />
+                                )}
                             </>
                         )}
 
@@ -182,16 +316,23 @@ export default function AuthScreen() {
                                     )}
                                 </TouchableOpacity>
                             </View>
+                            <TouchableOpacity style={styles.forgotPassword} onPress={() => router.push('/forgot-password')}>
+                                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+                            </TouchableOpacity>
                         </View>
 
                         <TouchableOpacity
-                            style={styles.primaryButton}
+                            style={[styles.primaryButton, loading && styles.primaryButtonLoading]}
                             onPress={handleAuth}
                             disabled={loading}
                         >
-                            <Text style={styles.buttonText}>
-                                {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Sign Up')}
-                            </Text>
+                            {loading ? (
+                                <ActivityIndicator color="black" />
+                            ) : (
+                                <Text style={styles.buttonText}>
+                                    {isLogin ? 'Sign In' : 'Sign Up'}
+                                </Text>
+                            )}
                         </TouchableOpacity>
 
                         <TouchableOpacity style={styles.linkContainer} onPress={() => setIsLogin(!isLogin)}>
@@ -308,6 +449,56 @@ const styles = StyleSheet.create({
         right: 16,
         padding: 4,
     },
+    dateButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        backgroundColor: NanoTheme.colors.background,
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#333',
+    },
+    dateText: {
+        color: NanoTheme.colors.text,
+        fontSize: 16,
+    },
+    datePlaceholder: {
+        color: NanoTheme.colors.textSecondary,
+    },
+    modalOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    modalContent: {
+        backgroundColor: NanoTheme.colors.backgroundAlt,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        paddingBottom: 40,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: NanoTheme.colors.border,
+    },
+    modalTitle: {
+        color: NanoTheme.colors.text,
+        fontSize: 18,
+        fontWeight: '600',
+    },
+    modalCancel: {
+        color: NanoTheme.colors.textSecondary,
+        fontSize: 16,
+    },
+    modalDone: {
+        color: NanoTheme.colors.primary,
+        fontSize: 16,
+        fontWeight: '600',
+    },
     primaryButton: {
         backgroundColor: NanoTheme.colors.primary,
         padding: 18,
@@ -318,6 +509,9 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
+    },
+    primaryButtonLoading: {
+        opacity: 0.7,
     },
     buttonText: {
         color: 'black',
@@ -336,31 +530,13 @@ const styles = StyleSheet.create({
         color: NanoTheme.colors.primary,
         fontWeight: 'bold',
     },
-    uploadButton: {
-        backgroundColor: NanoTheme.colors.background,
-        padding: 16,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#333',
-        borderStyle: 'dashed',
+    forgotPassword: {
+        alignSelf: 'flex-end',
+        marginTop: 12,
     },
-    uploadPlaceholder: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-    },
-    uploadedContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-    },
-    uploadText: {
-        color: NanoTheme.colors.textSecondary,
-        fontWeight: '500',
-    },
-    uploadedText: {
-        fontWeight: '500',
+    forgotPasswordText: {
+        color: NanoTheme.colors.primary,
+        fontSize: 14,
+        fontWeight: '600',
     },
 });

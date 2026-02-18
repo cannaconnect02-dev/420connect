@@ -2,9 +2,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { type Order } from "./OrderList";
-import { Clock, User, CheckCircle2, ChevronRight, XCircle } from "lucide-react";
+import { Clock, User, CheckCircle2, ChevronRight, XCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 interface OrderDetailsDialogProps {
     open: boolean;
@@ -13,27 +14,59 @@ interface OrderDetailsDialogProps {
     onUpdateStatus: (orderId: string, newStatus: string) => Promise<void>;
 }
 
-// Mock items generator if not present in order object yet
-const getMockItems = (_orderId: string) => [
-    { id: '1', name: 'Premium Cannabis Oil', quantity: 2, price: 450.00 },
-    { id: '2', name: 'Rolling Papers (Pack)', quantity: 1, price: 25.00 },
-    { id: '3', name: 'Herbal Grinder', quantity: 1, price: 150.00 },
-];
+interface OrderItem {
+    id: string;
+    quantity: number;
+    price_at_time: number;
+    menu_item_id: string;
+    menu_items?: {
+        name: string;
+        description?: string;
+        image_url?: string;
+    };
+}
 
 export function OrderDetailsDialog({ open, order, onClose, onUpdateStatus }: OrderDetailsDialogProps) {
     const [updating, setUpdating] = useState(false);
+    const [items, setItems] = useState<OrderItem[]>([]);
+    const [loadingItems, setLoadingItems] = useState(false);
+
+    // Fetch real order items when dialog opens
+    useEffect(() => {
+        if (!order || !open) {
+            setItems([]);
+            return;
+        }
+
+        async function fetchItems() {
+            setLoadingItems(true);
+            const { data, error } = await supabase
+                .from('order_items')
+                .select('id, quantity, price_at_time, menu_item_id, menu_items(name, description, image_url)')
+                .eq('order_id', order!.id);
+
+            if (error) {
+                console.error('Error fetching order items:', error);
+            } else {
+                setItems((data as any[]) || []);
+            }
+            setLoadingItems(false);
+        }
+
+        fetchItems();
+    }, [order?.id, open]);
 
     if (!order) return null;
 
-    const items = getMockItems(order.id); // In real app, this would be fetched or passed in
-    const total = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const total = items.reduce((acc, item) => acc + (item.price_at_time * item.quantity), 0);
+    const displayTotal = total > 0 ? total : order.total_amount;
 
     // Status Workflow Logic
     const getNextStatus = (current: string) => {
         switch (current) {
             case 'pending': return { label: 'Accept Order', next: 'preparing', color: 'bg-amber-500 hover:bg-amber-600' };
-            case 'preparing': return { label: 'Mark Ready', next: 'ready', color: 'bg-emerald-500 hover:bg-emerald-600' };
-            case 'ready_for_pickup': return { label: 'Complete Order', next: 'delivered', color: 'bg-blue-600 hover:bg-blue-700' };
+            case 'preparing': return { label: 'Mark Ready', next: 'ready_for_pickup', color: 'bg-emerald-500 hover:bg-emerald-600' };
+            case 'ready_for_pickup': return { label: 'Picked Up', next: 'picked_up', color: 'bg-blue-600 hover:bg-blue-700' };
             default: return null;
         }
     };
@@ -64,7 +97,7 @@ export function OrderDetailsDialog({ open, order, onClose, onUpdateStatus }: Ord
                             <div>
                                 <DialogTitle className="text-2xl font-bold text-white flex items-center gap-2">
                                     <span>#{order.id.slice(0, 8)}</span>
-                                    <Badge variant="outline" className="text-xs uppercase font-normal tracking-wider bg-white/5 border-white/10">{order.status}</Badge>
+                                    <Badge variant="outline" className="text-xs uppercase font-normal tracking-wider bg-white/5 border-white/10">{order.status.replace('_', ' ')}</Badge>
                                 </DialogTitle>
                                 <DialogDescription className="text-slate-400 mt-1 flex items-center gap-2">
                                     <Clock className="w-3 h-3" />
@@ -90,22 +123,37 @@ export function OrderDetailsDialog({ open, order, onClose, onUpdateStatus }: Ord
                     {/* Order Items */}
                     <div className="space-y-3">
                         <h4 className="text-sm font-medium text-slate-400 uppercase tracking-wider">Order Items</h4>
-                        <div className="space-y-2">
-                            {items.map((item) => (
-                                <div key={item.id} className="flex justify-between items-center py-2 border-b border-white/5 last:border-0 hover:bg-white/5 px-2 rounded-lg -mx-2 transition-colors">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-slate-800/50 w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 text-xs font-mono">
-                                            x{item.quantity}
+                        {loadingItems ? (
+                            <div className="flex items-center justify-center py-8">
+                                <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+                                <span className="ml-2 text-sm text-slate-500">Loading items...</span>
+                            </div>
+                        ) : items.length === 0 ? (
+                            <div className="text-center py-6 text-slate-500 text-sm">
+                                No items found for this order
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {items.map((item) => (
+                                    <div key={item.id} className="flex justify-between items-center py-2 border-b border-white/5 last:border-0 hover:bg-white/5 px-2 rounded-lg -mx-2 transition-colors">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-slate-800/50 w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 text-xs font-mono">
+                                                x{item.quantity}
+                                            </div>
+                                            <span className="text-slate-200">
+                                                {item.menu_items?.name || 'Unknown Item'}
+                                            </span>
                                         </div>
-                                        <span className="text-slate-200">{item.name}</span>
+                                        <span className="text-white font-medium">
+                                            R{(item.price_at_time * item.quantity).toFixed(2)}
+                                        </span>
                                     </div>
-                                    <span className="text-white font-medium">R{(item.price * item.quantity).toFixed(2)}</span>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                         <div className="pt-4 flex justify-between items-center border-t border-white/10 mt-4">
                             <span className="text-slate-400">Total Amount</span>
-                            <span className="text-2xl font-bold text-emerald-400">R{total.toFixed(2)}</span>
+                            <span className="text-2xl font-bold text-emerald-400">R{displayTotal.toFixed(2)}</span>
                         </div>
                     </div>
                 </div>
@@ -114,7 +162,7 @@ export function OrderDetailsDialog({ open, order, onClose, onUpdateStatus }: Ord
                     <Button
                         variant="outline"
                         onClick={handleCancel}
-                        disabled={updating || order.status === 'cancelled' || order.status === 'delivered'}
+                        disabled={updating || order.status === 'cancelled' || order.status === 'delivered' || order.status === 'picked_up'}
                         className="border-red-500/20 text-red-500 hover:bg-red-500/10 hover:text-red-400"
                     >
                         <XCircle className="w-4 h-4 mr-2" />

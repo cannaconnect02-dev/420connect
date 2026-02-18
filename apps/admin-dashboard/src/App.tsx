@@ -2,17 +2,21 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import type { Session } from '@supabase/supabase-js';
-import { LayoutDashboard, Users, Settings, LogOut, Store } from 'lucide-react';
+import { LayoutDashboard, Users, Settings as SettingsIcon, LogOut, Store, PlusCircle } from 'lucide-react';
 
 // Pages
 import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
 import DriverApprovals from './pages/DriverApprovals';
 import NewStore from './pages/NewStore';
+import StoreApprovals from './pages/StoreApprovals';
+import Settings from './pages/Settings';
+import { Link, useLocation } from 'react-router-dom';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const location = useLocation();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -32,6 +36,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   if (loading) return <div className="h-screen bg-slate-950 flex items-center justify-center text-white">Loading...</div>;
   if (!session) return <Navigate to="/auth" />;
 
+  const isActive = (path: string) => location.pathname === path ? "bg-green-500/10 text-green-400" : "hover:bg-white/5 text-slate-400";
+
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200">
       {/* Sidebar */}
@@ -42,18 +48,23 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 space-y-2">
-          <a href="/" className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 rounded-xl transition-colors text-slate-400">
+          <Link to="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive('/')}`}>
             <LayoutDashboard size={20} /> Dashboard
-          </a>
-          <a href="/drivers" className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 rounded-xl transition-colors text-slate-400">
+          </Link>
+          <Link to="/stores/approvals" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive('/stores/approvals')}`}>
+            <Store size={20} /> Store Approvals
+          </Link>
+          <Link to="/drivers" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive('/drivers')}`}>
             <Users size={20} /> Driver Approvals
-          </a>
-          <a href="/stores/new" className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 rounded-xl transition-colors text-slate-400">
-            <Store size={20} /> Onboard Store
-          </a>
-          <a href="#" className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 rounded-xl transition-colors text-slate-400">
-            <Settings size={20} /> Settings
-          </a>
+          </Link>
+          <Link to="/stores/new" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive('/stores/new')}`}>
+            <PlusCircle size={20} /> Onboard Store
+          </Link>
+          <div className="border-t border-slate-800 my-4 pt-4">
+            <Link to="/settings" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive('/settings')}`}>
+              <SettingsIcon size={20} /> Settings
+            </Link>
+          </div>
         </nav>
 
         <button
@@ -82,6 +93,11 @@ export default function App() {
             <Dashboard />
           </ProtectedLayout>
         } />
+        <Route path="/stores/approvals" element={
+          <ProtectedLayout>
+            <StoreApprovals />
+          </ProtectedLayout>
+        } />
         <Route path="/drivers" element={
           <ProtectedLayout>
             <DriverApprovals />
@@ -90,6 +106,11 @@ export default function App() {
         <Route path="/stores/new" element={
           <ProtectedLayout>
             <NewStore />
+          </ProtectedLayout>
+        } />
+        <Route path="/settings" element={
+          <ProtectedLayout>
+            <Settings />
           </ProtectedLayout>
         } />
       </Routes>

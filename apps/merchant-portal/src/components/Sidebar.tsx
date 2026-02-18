@@ -1,4 +1,4 @@
-import { LayoutDashboard, ShoppingBag, Menu as MenuIcon, LogOut } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, Menu as MenuIcon, LogOut, Settings } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,7 @@ export default function Sidebar() {
         { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
         { path: '/orders', icon: ShoppingBag, label: 'Orders' },
         { path: '/menu', icon: MenuIcon, label: 'Menu' },
+        { path: '/settings', icon: Settings, label: 'Settings' },
     ];
 
     return (
