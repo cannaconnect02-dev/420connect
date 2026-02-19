@@ -28,6 +28,7 @@ async function inspectLatestOrder() {
                 paystack_payment_status,
                 payment_method_id
             FROM orders 
+            WHERE paystack_payment_status = 'charged'
             ORDER BY created_at DESC 
             LIMIT 1
         `);
