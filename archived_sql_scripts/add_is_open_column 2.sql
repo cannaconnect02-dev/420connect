@@ -1,0 +1,3 @@
+
+ALTER TABLE public.restaurants 
+ADD COLUMN IF NOT EXISTS is_open BOOLEAN DEFAULT TRUE;
