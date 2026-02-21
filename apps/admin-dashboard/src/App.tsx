@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
 import DriverApprovals from './pages/DriverApprovals';
 import NewStore from './pages/NewStore';
 import StoreApprovals from './pages/StoreApprovals';
+import Stores from './pages/Stores';
 import Settings from './pages/Settings';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -51,6 +52,9 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           <Link to="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive('/')}`}>
             <LayoutDashboard size={20} /> Dashboard
           </Link>
+          <Link to="/stores" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive('/stores')}`}>
+            <Store size={20} /> Active Stores
+          </Link>
           <Link to="/stores/approvals" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive('/stores/approvals')}`}>
             <Store size={20} /> Store Approvals
           </Link>
@@ -91,6 +95,11 @@ export default function App() {
         <Route path="/" element={
           <ProtectedLayout>
             <Dashboard />
+          </ProtectedLayout>
+        } />
+        <Route path="/stores" element={
+          <ProtectedLayout>
+            <Stores />
           </ProtectedLayout>
         } />
         <Route path="/stores/approvals" element={

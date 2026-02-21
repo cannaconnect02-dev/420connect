@@ -14,7 +14,12 @@ interface OrderKanbanCardProps {
 }
 
 const NEXT_STATUS: Record<string, { label: string; next: string; color: string }> = {
+    new: { label: 'Start Preparing', next: 'preparing', color: 'bg-amber-500 hover:bg-amber-600' },
+    confirmed: { label: 'Start Preparing', next: 'preparing', color: 'bg-amber-500 hover:bg-amber-600' },
     pending: { label: 'Start Preparing', next: 'preparing', color: 'bg-amber-500 hover:bg-amber-600' },
+    paid: { label: 'Start Preparing', next: 'preparing', color: 'bg-amber-500 hover:bg-amber-600' },
+    processing: { label: 'Start Preparing', next: 'preparing', color: 'bg-amber-500 hover:bg-amber-600' },
+    accepted: { label: 'Start Preparing', next: 'preparing', color: 'bg-amber-500 hover:bg-amber-600' },
     preparing: { label: 'Mark Ready', next: 'ready_for_pickup', color: 'bg-emerald-500 hover:bg-emerald-600' },
     ready_for_pickup: { label: 'Picked Up', next: 'picked_up', color: 'bg-blue-500 hover:bg-blue-600' },
 };
@@ -140,8 +145,8 @@ export function OrderKanbanCard({ order, lane, onAdvance, onCancel, onViewOrder 
                 </div>
             )}
 
-            {/* All Orders lane: show advance for pending orders */}
-            {!isTerminal && lane === 'all' && order.status === 'pending' && nextAction && (
+            {/* All Orders lane: show advance for pending/new/confirmed orders */}
+            {!isTerminal && lane === 'all' && ['new', 'confirmed', 'pending', 'paid', 'processing', 'accepted'].includes(order.status) && nextAction && (
                 <div className="flex gap-2">
                     <Button
                         size="sm"

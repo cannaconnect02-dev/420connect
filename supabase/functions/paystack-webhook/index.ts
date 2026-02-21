@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
             // Check Idempotency
             const { data: order } = await supabaseAdmin
                 .from('orders')
-                .select('id, paystack_payment_status, user_id')
+                .select('id, paystack_payment_status, customer_id')
                 .eq('paystack_reference', reference)
                 .single();
 
@@ -88,44 +88,98 @@ Deno.serve(async (req) => {
                         .from('payment_methods')
                         .select('id')
                         .eq('paystack_authorization_code', auth.authorization_code)
-                        .eq('user_id', order.user_id)
+                        .eq('user_id', order.customer_id)
                         .single();
 
                     if (!existingPm) {
-                        await supabaseAdmin.from('payment_methods').insert({
-                            user_id: order.user_id,
+                        const { data: newPm, error: insertError } = await supabaseAdmin.from('payment_methods').insert({
+                            user_id: order.customer_id,
                             paystack_authorization_code: auth.authorization_code,
-                            card_last4: auth.last4,
+                            card_last4: String(auth.last4),
                             card_brand: auth.brand,
-                            card_exp_month: auth.exp_month,
-                            card_exp_year: auth.exp_year,
-                            is_default: true // Make default if first one?
-                        });
-                        console.log('Payment Method Saved');
+                            card_exp_month: String(auth.exp_month),
+                            card_exp_year: String(auth.exp_year),
+                            is_default: true
+                        }).select('id').single();
+
+                        if (insertError) {
+                            console.error('Failed to save payment method:', insertError);
+                        } else {
+                            console.log('Payment Method Saved');
+                            await supabaseAdmin.from('orders').update({ payment_method_id: newPm.id }).eq('id', order.id);
+                        }
+                    } else {
+                        await supabaseAdmin.from('orders').update({ payment_method_id: existingPm.id }).eq('id', order.id);
                     }
+                }
+
+                // --- Handle Store Ledger Debt Recovery ---
+                let metadata = eventData.metadata;
+
+                // Paystack metadata can sometimes be a string
+                if (typeof metadata === 'string') {
+                    try {
+                        metadata = JSON.parse(metadata);
+                    } catch (e) {
+                        console.error('Failed to parse metadata string:', metadata);
+                        metadata = {};
+                    }
+                }
+
+                console.log('Processed Metadata:', JSON.stringify(metadata));
+
+                if (metadata && metadata.debt_recovered && metadata.store_id) {
+                    const recoveredAmount = Number(metadata.debt_recovered);
+                    const storeId = metadata.store_id;
+
+                    console.log(`DEBT RECOVERY: Recovered R${recoveredAmount} debt for store ${storeId}. Logging to ledger.`);
+
+                    const { error: ledgerError } = await supabaseAdmin
+                        .from('store_ledger')
+                        .insert({
+                            store_id: storeId,
+                            type: 'payout_deduction',
+                            amount: -recoveredAmount, // Negative pays off the debt
+                            order_id: order.id,
+                            description: `Automatic debt recovery from Order #${order.id}`
+                        });
+
+                    if (ledgerError) {
+                        console.error('DEBT RECOVERY ERROR: Failed to log debt recovery in ledger:', ledgerError);
+                    } else {
+                        console.log('DEBT RECOVERY SUCCESS: Ledger updated successfully.');
+                    }
+                } else {
+                    console.log('DEBT RECOVERY: No recovery data found in metadata.', {
+                        hasMetadata: !!metadata,
+                        hasDebtRecovered: !!(metadata && metadata.debt_recovered),
+                        hasStoreId: !!(metadata && metadata.store_id)
+                    });
                 }
             } else {
                 console.warn('Order not found for reference:', reference);
             }
 
         } else if (eventType === 'refund.processed') {
-            const transactionId = String(eventData.transaction_id || eventData.id); // Check payload structure
-            // Or usually refund object has 'transaction_reference' ?
-            // Paystack 'refund.processed' data has { transaction_reference, ... } often?
-            // Let's rely on finding order by transaction ID if possible.
+            // Paystack can send transaction_id OR transaction.id
+            const transactionId = String(
+                eventData.transaction?.id ||
+                eventData.transaction_id ||
+                eventData.id
+            );
 
-            // Wait, eventData for refund.processed usually contains refund details.
-            // We need to link it back to the order.
+            console.log(`Processing refund webhook for transaction: ${transactionId}`);
 
-            // Assuming we can find by transaction ID
-            // Ideally we store `paystack_transaction_id` on charge.success
-
-            await supabaseAdmin
+            const { error: updateError } = await supabaseAdmin
                 .from('orders')
                 .update({ paystack_payment_status: 'refunded' })
                 .eq('paystack_transaction_id', transactionId);
 
-            console.log('Order marked as Refunded');
+            if (updateError) {
+                console.error('Failed to update order status from refund webhook:', updateError);
+            } else {
+                console.log('Order marked as Refunded via Webhook');
+            }
 
         } else if (eventType === 'transfer.reversed') {
             // Handle if needed

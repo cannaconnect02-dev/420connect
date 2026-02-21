@@ -56,8 +56,10 @@ export default function FindingStoreScreen() {
                 (payload) => {
                     console.log("Order update received:", payload);
                     const newStatus = payload.new.status;
-                    const ignoredStatuses = ['pending', 'cancelled', 'rejected'];
-                    if (newStatus && !ignoredStatuses.includes(newStatus)) {
+                    if (newStatus === 'cancelled') {
+                        handleOrderCancelled(payload.new.cancelled_by);
+                        if (cleanupFn) cleanupFn();
+                    } else if (newStatus && !['pending', 'rejected'].includes(newStatus)) {
                         handleStoreFound();
                         if (cleanupFn) cleanupFn(); // Stop polling/timer
                     }
@@ -90,12 +92,16 @@ export default function FindingStoreScreen() {
         // 2. Initial Status Check (Race condition fix)
         const { data: order } = await supabase
             .from('orders')
-            .select('status')
+            .select('status, cancelled_by')
             .eq('id', orderId)
             .single();
 
-        const ignoredStatuses = ['pending', 'cancelled', 'rejected'];
-        if (order && !ignoredStatuses.includes(order.status)) {
+        if (order?.status === 'cancelled') {
+            handleOrderCancelled(order.cancelled_by);
+            return;
+        }
+
+        if (order && !['pending', 'rejected'].includes(order.status)) {
             handleStoreFound();
             return; // Don't start timer if already accepted
         }
@@ -127,19 +133,25 @@ export default function FindingStoreScreen() {
             console.log("Polling order status...");
             const { data: order } = await supabase
                 .from('orders')
-                .select('status')
+                .select('status, cancelled_by')
                 .eq('id', orderId)
                 .single();
 
-            const ignoredStatuses = ['pending', 'cancelled', 'rejected'];
-            if (order && !ignoredStatuses.includes(order.status)) {
+            if (order?.status === 'cancelled') {
+                runOnJS(handleOrderCancelled)(order.cancelled_by);
+                clearInterval(interval);
+                clearInterval(pollingInterval);
+                cancelAnimation(progress);
+                return;
+            }
+
+            if (order && !['pending', 'rejected'].includes(order.status)) {
                 console.log("Order accepted (via polling):", order.status);
                 runOnJS(handleStoreFound)();
                 // Clear intervals immediately
                 clearInterval(interval);
                 clearInterval(pollingInterval);
                 cancelAnimation(progress);
-                // Also clean up main interval return
             }
         }, 5000);
 
@@ -160,6 +172,19 @@ export default function FindingStoreScreen() {
         ]);
     };
 
+    const handleOrderCancelled = (by: string) => {
+        cancelAnimation(progress);
+
+        let message = "Your order has been cancelled.";
+        if (by === 'merchant') {
+            message = "The store has cancelled your order. You will be refunded in full.";
+        }
+
+        Alert.alert("Store Cancelled", message, [
+            { text: "OK", onPress: () => router.replace('/(tabs)') }
+        ]);
+    };
+
     const executeRefund = async (reason: 'timeout' | 'cancel') => {
         console.log(`Processing refund due to: ${reason}`);
         try {
@@ -175,7 +200,10 @@ export default function FindingStoreScreen() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${supabaseAnonKey}`
                 },
-                body: JSON.stringify({ reference })
+                body: JSON.stringify({
+                    reference,
+                    cancelled_by: reason === 'timeout' ? 'timeout' : 'customer'
+                })
             });
 
             const data = await res.json();

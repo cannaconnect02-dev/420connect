@@ -64,7 +64,12 @@ export function OrderDetailsDialog({ open, order, onClose, onUpdateStatus }: Ord
     // Status Workflow Logic
     const getNextStatus = (current: string) => {
         switch (current) {
-            case 'pending': return { label: 'Accept Order', next: 'preparing', color: 'bg-amber-500 hover:bg-amber-600' };
+            case 'new':
+            case 'confirmed':
+            case 'pending':
+            case 'paid':
+            case 'processing':
+            case 'accepted': return { label: 'Accept Order', next: 'preparing', color: 'bg-amber-500 hover:bg-amber-600' };
             case 'preparing': return { label: 'Mark Ready', next: 'ready_for_pickup', color: 'bg-emerald-500 hover:bg-emerald-600' };
             case 'ready_for_pickup': return { label: 'Picked Up', next: 'picked_up', color: 'bg-blue-600 hover:bg-blue-700' };
             default: return null;

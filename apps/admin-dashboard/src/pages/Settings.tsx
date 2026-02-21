@@ -11,6 +11,8 @@ export default function Settings() {
     const [extendedRate, setExtendedRate] = useState<number>(2.5);
     // Order Settings
     const [matchingWindow, setMatchingWindow] = useState<number>(300);
+    // Store Fees
+    const [cancellationFee, setCancellationFee] = useState<number>(20);
 
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -26,7 +28,7 @@ export default function Settings() {
             const { data, error } = await supabase
                 .from('settings')
                 .select('key, value')
-                .in('key', ['global_markup_percent', 'delivery_base_rate', 'delivery_threshold_km', 'delivery_extended_price', 'max_delivery_distance_km', 'matching_window_seconds']);
+                .in('key', ['global_markup_percent', 'delivery_base_rate', 'delivery_threshold_km', 'delivery_extended_price', 'max_delivery_distance_km', 'matching_window_seconds', 'cancellation_fee']);
 
             if (error) {
                 console.error('Error fetching settings:', error);
@@ -54,6 +56,9 @@ export default function Settings() {
                             break;
                         case 'matching_window_seconds':
                             setMatchingWindow(Number(setting.value?.seconds || 300));
+                            break;
+                        case 'cancellation_fee':
+                            setCancellationFee(Number(setting.value?.amount || 20));
                             break;
                     }
                 });
@@ -130,6 +135,28 @@ export default function Settings() {
             setMessage({ type: 'success', text: 'Order settings saved successfully.' });
         } catch (error: any) {
             setMessage({ type: 'error', text: error.message || 'Failed to save order settings.' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleSaveStoreFees = async () => {
+        setSaving(true);
+        setMessage(null);
+
+        try {
+            const { error } = await supabase
+                .from('settings')
+                .upsert({
+                    key: 'cancellation_fee',
+                    value: { amount: cancellationFee }
+                }, { onConflict: 'key' });
+
+            if (error) throw error;
+
+            setMessage({ type: 'success', text: 'Store fee settings saved successfully.' });
+        } catch (error: any) {
+            setMessage({ type: 'error', text: error.message || 'Failed to save store fee settings.' });
         } finally {
             setSaving(false);
         }
@@ -316,6 +343,51 @@ export default function Settings() {
                                 <Save className="w-5 h-5" />
                             )}
                             Save Order Settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Store Fees Section */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-2xl">
+                <div className="flex items-center gap-2 mb-6 text-amber-400 pb-2 border-b border-slate-800">
+                    <AlertCircle className="w-5 h-5" />
+                    <h2 className="text-xl font-semibold text-white">Store Fees</h2>
+                </div>
+
+                <div className="space-y-6">
+                    <div>
+                        <label className="block text-slate-300 mb-2 font-medium">
+                            Cancellation Fee (R)
+                        </label>
+                        <p className="text-sm text-slate-500 mb-4">
+                            Fee charged to stores when an order is cancelled. This is automatically deducted from future payouts.
+                        </p>
+                        <div className="flex items-center gap-4">
+                            <span className="text-slate-400 text-xl font-bold">R</span>
+                            <input
+                                type="number"
+                                value={cancellationFee}
+                                onChange={(e) => setCancellationFee(Number(e.target.value))}
+                                min="0"
+                                step="1"
+                                className="bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-white w-32 focus:outline-none focus:border-amber-500"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-800 flex items-center gap-4">
+                        <button
+                            onClick={handleSaveStoreFees}
+                            disabled={saving || recalculating}
+                            className="flex items-center gap-2 px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                        >
+                            {saving ? (
+                                <RefreshCw className="animate-spin w-5 h-5" />
+                            ) : (
+                                <Save className="w-5 h-5" />
+                            )}
+                            Save Store Fees
                         </button>
                     </div>
                 </div>

@@ -1,7 +1,22 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { OrderDetailsDialog } from '../OrderDetailsDialog';
 import { type Order } from '../OrderList'; // Assuming type is exported
+
+vi.mock('@/lib/supabase', () => {
+    return {
+        supabase: {
+            from: vi.fn(() => ({
+                select: vi.fn(() => ({
+                    eq: vi.fn().mockResolvedValue({
+                        data: [{ id: 'item1', quantity: 1, price_at_time: 150, menu_items: { name: 'Premium Cannabis Oil' } }],
+                        error: null
+                    })
+                }))
+            }))
+        }
+    };
+});
 
 // Mock Order
 const mockOrder: Order = {
@@ -26,7 +41,7 @@ describe('OrderDetailsDialog', () => {
         expect(screen.queryByText('Test Customer')).not.toBeInTheDocument();
     });
 
-    it('renders order details when open', () => {
+    it('renders order details when open', async () => {
         render(
             <OrderDetailsDialog
                 open={true}
@@ -36,10 +51,10 @@ describe('OrderDetailsDialog', () => {
             />
         );
         expect(screen.getByText('Test Customer')).toBeInTheDocument();
-        expect(screen.getByText(/Premium Cannabis Oil/i)).toBeInTheDocument(); // Mocked item
+        expect(await screen.findByText(/Premium Cannabis Oil/i)).toBeInTheDocument(); // Mocked item
     });
 
-    it('calls onUpdateStatus when action button is clicked', () => {
+    it('calls onUpdateStatus when action button is clicked', async () => {
         const onUpdateStatus = vi.fn().mockResolvedValue(undefined);
         render(
             <OrderDetailsDialog
@@ -50,8 +65,13 @@ describe('OrderDetailsDialog', () => {
             />
         );
 
+        // Wait for order items to load to avoid unhandled state updates
+        await screen.findByText(/Premium Cannabis Oil/i);
+
         const actionButton = screen.getByText(/Accept Order/i);
-        fireEvent.click(actionButton);
+        await act(async () => {
+            fireEvent.click(actionButton);
+        });
 
         expect(onUpdateStatus).toHaveBeenCalledWith(mockOrder.id, 'preparing');
     });

@@ -23,8 +23,8 @@ interface Order {
     total_amount: number;
     created_at: string;
     delivery_address: string;
-    payment_ref: string;
-    payment_status: string;
+    paystack_reference: string;
+    paystack_payment_status: string;
     store_id: string;
     driver_id?: string;
     stores: {
@@ -70,8 +70,8 @@ export default function OrderDetailScreen() {
                     total_amount,
                     created_at,
                     delivery_address,
-                    payment_ref,
-                    payment_status,
+                    paystack_reference,
+                    paystack_payment_status,
                     store_id,
                     driver_id,
                     stores:store_id (name, phone, address),
@@ -258,17 +258,17 @@ export default function OrderDetailScreen() {
                             <Text style={styles.paymentLabel}>Status</Text>
                             <View style={[
                                 styles.paymentBadge,
-                                order.payment_status === 'paid' && styles.paymentBadgePaid
+                                order.paystack_payment_status === 'charged' && styles.paymentBadgePaid
                             ]}>
                                 <Text style={styles.paymentBadgeText}>
-                                    {order.payment_status?.toUpperCase() || 'PENDING'}
+                                    {order.paystack_payment_status?.toUpperCase() || 'PENDING'}
                                 </Text>
                             </View>
                         </View>
-                        {order.payment_ref && (
+                        {order.paystack_reference && (
                             <View style={styles.paymentRow}>
                                 <Text style={styles.paymentLabel}>Reference</Text>
-                                <Text style={styles.paymentValue}>{order.payment_ref}</Text>
+                                <Text style={styles.paymentValue}>{order.paystack_reference}</Text>
                             </View>
                         )}
                     </View>

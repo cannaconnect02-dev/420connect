@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
             throw new Error('Missing PAYSTACK_SECRET_KEY configuration');
         }
 
-        const { reference, transaction_id } = await req.json();
+        const { reference, transaction_id, cancelled_by = 'customer' } = await req.json();
 
         if (!reference && !transaction_id) {
             throw new Error('Missing transaction reference or ID');
@@ -57,7 +57,8 @@ Deno.serve(async (req) => {
                 .from('orders')
                 .update({
                     paystack_payment_status: 'refunded',
-                    status: 'cancelled'
+                    status: 'cancelled',
+                    cancelled_by: cancelled_by
                 })
                 .eq('paystack_reference', reference);
         }
