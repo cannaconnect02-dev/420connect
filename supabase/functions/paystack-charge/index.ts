@@ -24,24 +24,15 @@ Deno.serve(async (req) => {
         }
 
         // 3. Parse Request
-        const { email, amount, payment_method_id, metadata } = await req.json();
+        const { email, amount, payment_method_id, split_code, subaccount_code, metadata, store_id } = await req.json();
 
         if (!email || !amount) {
             throw new Error('Missing required fields: email, amount');
         }
 
-        console.log(`Creating charge for ${email}, amount: ${amount}`);
+        console.log(`Creating charge for ${email}, amount: ${amount}, store: ${store_id}`);
 
         // 4. Prepare Paystack Payload
-        // Amount is in Kobo (cents), so ensure we receive 1000 for 10.00
-        // We assume 'amount' passed is already correct (e.g. 28000 for R280.00) or we document it.
-        // Let's assume input is in base currency for safety and we multiply? 
-        // NO, standard is usually lowest denomination.
-        // Let's assume input 'amount' is in ZAR (e.g. 280) and we multiply by 100 for Kobo/Cents.
-        // Wait, Paystack ZAR uses cents. 
-        // Existing checkout.tsx used 'amount: 250'. 
-        // Ensure consistency.
-
         const paystackAmount = Math.round(Number(amount) * 100); // R100 -> 10000 cents
 
         let paystackPayload: any = {
@@ -71,6 +62,72 @@ Deno.serve(async (req) => {
             paystackPayload.authorization_code = pm.paystack_authorization_code;
         }
 
+        // --- Store Ledger & Dynamic Split Calculation ---
+        let debtRecovered = 0;
+        let usedDynamicCharge = false;
+
+        if (store_id) {
+            // Fetch store balance and custom percentage
+            const { data: storeRef, error: storeError } = await supabaseAdmin
+                .from('stores')
+                .select('ledger_balance, paystack_split_percentage')
+                .eq('id', store_id)
+                .single();
+
+            if (storeError) {
+                console.error('Error fetching store ledger details:', storeError);
+            } else if (storeRef) {
+                const balanceOwed = Number(storeRef.ledger_balance || 0);
+                const platformSplitPercentage = Number(storeRef.paystack_split_percentage || 17);
+
+                // Option 2 Implementation: We enforce the custom transaction_charge
+                if (balanceOwed > 0 || platformSplitPercentage !== 0) {
+                    paystackPayload.subaccount = subaccount_code; // Must point to the subaccount
+
+                    // Calculate platform's percentage cut (in cents)
+                    const basePlatformFeeCents = Math.round(paystackAmount * (platformSplitPercentage / 100));
+
+                    // Add whatever is owed by the store to our cut. 
+                    const debtOwedCents = Math.round(balanceOwed * 100);
+
+                    // The total charge the platform keeps over the store's transaction
+                    // CRITICAL FIX: We must cap this below the total paystackAmount or Paystack will reject it.
+                    // We leave at least R1 (100 cents) for the store/transaction overhead to be safe.
+                    const maxPlatformChargeCents = Math.max(0, paystackAmount - 100);
+                    const requestedPlatformChargeCents = basePlatformFeeCents + debtOwedCents;
+
+                    const actualPlatformChargeCents = Math.min(requestedPlatformChargeCents, maxPlatformChargeCents);
+
+                    // Paystack will send the flat `transaction_charge` to the main account, remainder to the subaccount
+                    paystackPayload.transaction_charge = actualPlatformChargeCents;
+                    usedDynamicCharge = true;
+
+                    // Tag how much debt was recovered in metadata (only the portion above the base fee)
+                    const actualDebtRecoveredCents = Math.max(0, actualPlatformChargeCents - basePlatformFeeCents);
+                    debtRecovered = actualDebtRecoveredCents / 100;
+
+                    if (debtRecovered > 0) {
+                        paystackPayload.metadata.debt_recovered = debtRecovered;
+                        paystackPayload.metadata.store_id = store_id;
+                        console.log(`Overriding split: ${platformSplitPercentage}% fee + R${debtRecovered} debt recovery (Capped: ${actualPlatformChargeCents} cents).`);
+                    } else {
+                        console.log(`Overriding split: custom ${platformSplitPercentage}% base fee. Total charge: ${actualPlatformChargeCents} cents.`);
+                    }
+                }
+            }
+        }
+
+        // Fallback to legacy split logic if no dynamic charge was calculated
+        if (!usedDynamicCharge) {
+            if (split_code) {
+                paystackPayload.split_code = split_code;
+                console.log(`Using Transaction Split: ${split_code}`);
+            } else if (subaccount_code) {
+                paystackPayload.subaccount = subaccount_code;
+                console.log(`Using direct subaccount: ${subaccount_code}`);
+            }
+        }
+
         // 5. Call Paystack API
         const endpoint = 'https://api.paystack.co/transaction/initialize';
         // Note: For recurring (auth code), we use 'transaction/charge_authorization' providing 'authorization_code'
@@ -81,6 +138,8 @@ Deno.serve(async (req) => {
         if (paystackPayload.authorization_code) {
             apiUrl = 'https://api.paystack.co/transaction/charge_authorization';
         }
+
+        console.log(`Payload being sent to Paystack (${apiUrl}):`, JSON.stringify(paystackPayload, null, 2));
 
         const response = await fetch(apiUrl, {
             method: 'POST',

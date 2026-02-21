@@ -13,6 +13,7 @@ export default function Dashboard() {
     const navigate = useNavigate();
     const [merchantName, setMerchantName] = useState<string>("");
     const [storeName, setStoreName] = useState<string>("");
+    const [storeId, setStoreId] = useState<string | null>(null);
     const [storeLogo, setStoreLogo] = useState<string | null>(null);
     const [stats, setStats] = useState({
         todayRevenue: 42500,
@@ -47,9 +48,11 @@ export default function Dashboard() {
                 .maybeSingle();
 
             if (store) {
+                setStoreId(store.id);
                 setStoreName(store.name || 'My Store');
                 setStoreLogo(store.image_url || null);
             } else {
+                setStoreId(null);
                 setStoreName("");
                 setStoreLogo(null);
             }
@@ -68,7 +71,7 @@ export default function Dashboard() {
                 if (ordersData && ordersData.length > 0) {
                     setStats(prev => ({
                         ...prev,
-                        todayRevenue: ordersData.reduce((sum, o) => sum + (o.total_amount || 0), 0),
+                        todayRevenue: ordersData.reduce((sum, o) => sum + Number(o.total_amount || 0), 0),
                         todayOrders: ordersData.length,
                     }));
                 }
@@ -86,7 +89,7 @@ export default function Dashboard() {
         const { data: allOrders } = await supabase
             .from('orders')
             .select('id, customer_id, status, total_amount, created_at')
-            .eq('store_owner_id', user.id)
+            .eq('store_id', storeId)
             .order('created_at', { ascending: false });
 
         if (!allOrders || allOrders.length === 0) {

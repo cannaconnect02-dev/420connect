@@ -54,6 +54,78 @@ export function RecentOrders() {
         fetchOrders();
     }, []);
 
+    // ─── Real-time subscription ──────────────────────────────
+    useEffect(() => {
+        async function setupSubscription() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { data: store } = await supabase
+                .from('stores')
+                .select('id')
+                .eq('owner_id', user.id)
+                .maybeSingle();
+
+            if (!store) return;
+
+            const channel = supabase
+                .channel('recent-orders-realtime')
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'orders',
+                        filter: `store_id=eq.${store.id}`,
+                    },
+                    (payload) => {
+                        console.log('Realtime event in Dashboard:', payload);
+                        if (payload.eventType === 'INSERT') {
+                            const newOrder = payload.new as any;
+                            if (newOrder.status === 'cancelled') return;
+
+                            if (['pending', 'new', 'confirmed', 'preparing', 'ready'].includes(newOrder.status)) {
+                                setOrders(prev => {
+                                    if (prev.some(o => o.id === newOrder.id)) return prev;
+                                    const formatted: Order = {
+                                        id: newOrder.id,
+                                        initials: newOrder.id.slice(0, 2).toUpperCase(),
+                                        name: newOrder.customer_name || `Customer ${newOrder.id.slice(0, 3).toUpperCase()}`,
+                                        items: 0,
+                                        total: `R${newOrder.total_amount}`,
+                                        status: newOrder.status === 'ready' ? 'Ready' : newOrder.status === 'preparing' ? 'Preparing' : 'New',
+                                    };
+                                    return [formatted, ...prev.slice(0, 4)];
+                                });
+                            }
+                        } else if (payload.eventType === 'UPDATE') {
+                            const updated = payload.new as any;
+                            // If it's cancelled, remove it from the list
+                            if (updated.status === 'cancelled') {
+                                setOrders(prev => prev.filter(o => o.id !== updated.id));
+                            } else {
+                                // Update status in the list
+                                setOrders(prev => {
+                                    if (!prev.some(o => o.id === updated.id)) return prev; // Only update if order exists
+                                    return prev.map(o =>
+                                        o.id === updated.id
+                                            ? { ...o, status: updated.status === 'ready' ? 'Ready' : updated.status === 'preparing' ? 'Preparing' : 'New' }
+                                            : o
+                                    );
+                                });
+                            }
+                        }
+                    }
+                )
+                .subscribe();
+
+            return () => {
+                supabase.removeChannel(channel);
+            };
+        }
+        setupSubscription();
+    }, []);
+
     async function fetchOrders() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
@@ -66,11 +138,29 @@ export function RecentOrders() {
             return;
         }
 
+        // 1. Fetch store for this owner
+        const { data: store } = await supabase
+            .from('stores')
+            .select('id')
+            .eq('owner_id', user.id)
+            .maybeSingle();
+
+        if (!store) {
+            setOrders([
+                { id: "1", initials: "AF", name: "Alice Freeman", items: 3, total: "R450", status: "Ready" },
+                { id: "2", initials: "BS", name: "Bob Smith", items: 1, total: "R120", status: "Preparing" },
+                { id: "3", initials: "CD", name: "Charlie Davis", items: 2, total: "R650", status: "New" },
+            ]);
+            setLoading(false);
+            return;
+        }
+
+        // 2. Fetch orders for this store
         const { data } = await supabase
             .from('orders')
             .select('*')
-            .eq('store_owner_id', user.id)
-            .in('status', ['pending', 'new', 'preparing', 'ready'])
+            .eq('store_id', store.id)
+            .in('status', ['pending', 'new', 'confirmed', 'preparing', 'ready'])
             .order('created_at', { ascending: false })
             .limit(5);
 

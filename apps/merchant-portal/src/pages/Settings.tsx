@@ -19,7 +19,9 @@ import {
     Trash2,
     Upload,
     ImageIcon,
-    ClockIcon
+    ClockIcon,
+    Building2,
+    CreditCard
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -61,6 +63,19 @@ interface StoreData {
     longitude: number | null;
 }
 
+interface BankDetails {
+    business_name: string;
+    settlement_bank: string;
+    account_number: string;
+    bank_id: string;
+}
+
+interface Bank {
+    id: string;
+    name: string;
+    code: string;
+}
+
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
 const DAY_LABELS: Record<typeof DAYS[number], string> = {
     monday: 'Monday',
@@ -87,6 +102,13 @@ export default function Settings() {
     const { toast } = useToast();
     const { loaded: googleMapsLoaded, error: googleMapsError } = useGoogleMaps();
     const [store, setStore] = useState<StoreData | null>(null);
+    const [bankDetails, setBankDetails] = useState<BankDetails>({
+        business_name: '',
+        settlement_bank: '',
+        account_number: '',
+        bank_id: ''
+    });
+    const [banks, setBanks] = useState<Bank[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [hasStore, setHasStore] = useState(true);
@@ -101,6 +123,7 @@ export default function Settings() {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
+        fetchBanks();
         if (user) {
             const roleCheck = hasRole('store_admin');
             setHasStoreAdminRole(roleCheck);
@@ -142,6 +165,20 @@ export default function Settings() {
         }
     };
 
+    const fetchBanks = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('banks')
+                .select('id, name, code')
+                .eq('is_active', true)
+                .order('name');
+            if (error) throw error;
+            setBanks(data || []);
+        } catch (err) {
+            console.error('Error fetching banks:', err);
+        }
+    };
+
     const fetchStore = async () => {
         try {
             const { data, error } = await supabase
@@ -175,6 +212,22 @@ export default function Settings() {
                 // Set initial image preview from existing store image
                 if (data.image_url) {
                     setImagePreview(data.image_url);
+                }
+
+                // Fetch Bank Details
+                const { data: bankData, error: bankError } = await supabase
+                    .from('bank_details')
+                    .select('business_name, settlement_bank, account_number, bank_id')
+                    .eq('store_id', data.id)
+                    .maybeSingle();
+
+                if (!bankError && bankData) {
+                    setBankDetails({
+                        business_name: bankData.business_name,
+                        settlement_bank: bankData.settlement_bank || '',
+                        account_number: bankData.account_number,
+                        bank_id: bankData.bank_id || ''
+                    });
                 }
             } else {
                 setHasStore(false);
@@ -420,6 +473,31 @@ export default function Settings() {
                 .eq('id', store.id);
 
             if (error) throw error;
+
+            // Save Bank Details
+            if (bankDetails.business_name || bankDetails.bank_id || bankDetails.account_number) {
+                if (!bankDetails.business_name || !bankDetails.bank_id || !bankDetails.account_number) {
+                    throw new Error("All bank detail fields are required if you provide any.");
+                }
+
+                // Resolve bank code from bank_id
+                const selectedBank = banks.find(b => b.id === bankDetails.bank_id);
+
+                const { error: bankError } = await supabase
+                    .from('bank_details')
+                    .upsert({
+                        store_id: store.id,
+                        business_name: bankDetails.business_name,
+                        settlement_bank: selectedBank?.code || bankDetails.settlement_bank,
+                        account_number: bankDetails.account_number,
+                        bank_id: bankDetails.bank_id
+                    }, { onConflict: 'store_id' }); // Upsert requires a unique constraint on store_id or id
+
+                if (bankError) {
+                    console.error("Bank Error", bankError);
+                    throw new Error("Failed to save bank details");
+                }
+            }
 
             // Update local state with new image URL
             setStore(prev => prev ? { ...prev, image_url: imageUrl } : null);
@@ -716,6 +794,60 @@ export default function Settings() {
                                         onChange={(e) => setStore(prev => prev ? { ...prev, email: e.target.value } : null)}
                                     />
                                 </div>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Bank Details */}
+                <Card className="bg-card border-border">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Building2 className="w-5 h-5" />
+                            Bank Details (For Payouts)
+                        </CardTitle>
+                        <CardDescription>Enter the details for your settlement bank where payouts will be sent.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="bank_business_name">Registered Business Name / Account Name</Label>
+                            <Input
+                                id="bank_business_name"
+                                value={bankDetails.business_name}
+                                onChange={(e) => setBankDetails(prev => ({ ...prev, business_name: e.target.value }))}
+                                placeholder="E.g., My Store PTY LTD"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="settlement_bank">Settlement Bank</Label>
+                            <select
+                                id="settlement_bank"
+                                value={bankDetails.bank_id}
+                                onChange={(e) => setBankDetails(prev => ({ ...prev, bank_id: e.target.value }))}
+                                className="w-full bg-background border border-input rounded-md h-10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            >
+                                <option value="" disabled>Select your bank</option>
+                                {banks.map(bank => (
+                                    <option key={bank.id} value={bank.id}>{bank.name} ({bank.code})</option>
+                                ))}
+                            </select>
+                            <p className="text-xs text-muted-foreground mt-1">Select the bank where payouts will be deposited.</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="account_number">Account Number</Label>
+                            <div className="relative">
+                                <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                <Input
+                                    id="account_number"
+                                    type="text"
+                                    className="pl-10"
+                                    value={bankDetails.account_number}
+                                    onChange={(e) => setBankDetails(prev => ({ ...prev, account_number: e.target.value }))}
+                                    placeholder="e.g., 62000000000"
+                                    maxLength={20}
+                                />
                             </div>
                         </div>
                     </CardContent>

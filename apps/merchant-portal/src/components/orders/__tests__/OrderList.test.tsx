@@ -51,9 +51,9 @@ describe('OrderList Component', () => {
 
         render(<OrderList {...defaultProps} orders={[order]} onViewOrder={onViewOrder} />);
 
-        // Find the row (using text from the row)
-        const row = screen.getByText('Test Customer').closest('tr');
-        fireEvent.click(row!);
+        // Find the cell containing the customer text (since onClick is on TableCell, not TableRow)
+        const cell = screen.getByText('Test Customer');
+        fireEvent.click(cell);
 
         expect(onViewOrder).toHaveBeenCalledWith(order);
     });

@@ -20,6 +20,8 @@ export interface Order {
     created_at: string;
     items_count?: number;
     customer_name?: string;
+    paystack_reference?: string;
+    paystack_payment_status?: string;
 }
 
 interface OrderListProps {

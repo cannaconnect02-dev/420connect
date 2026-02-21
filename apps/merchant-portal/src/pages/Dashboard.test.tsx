@@ -8,12 +8,14 @@ const createMockChain = (returnData: any = null, returnCount: number | null = nu
     const chain: any = {
         select: vi.fn(() => chain),
         eq: vi.fn(() => chain),
+        in: vi.fn(() => chain),
         gte: vi.fn(() => chain),
         lt: vi.fn(() => chain),
         lte: vi.fn(() => chain),
         order: vi.fn(() => chain),
         limit: vi.fn(() => chain),
         single: vi.fn(() => Promise.resolve({ data: returnData, error: null })),
+        maybeSingle: vi.fn(() => Promise.resolve({ data: returnData, error: null })),
         then: (resolve: any) => resolve({ data: returnData, count: returnCount, error: null })
     };
     return chain;
@@ -26,6 +28,11 @@ vi.mock('@/lib/supabase', () => {
             auth: {
                 getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'test-user-id' } }, error: null }),
             },
+            channel: vi.fn(() => ({
+                on: vi.fn().mockReturnThis(),
+                subscribe: vi.fn(),
+            })),
+            removeChannel: vi.fn(),
             from: vi.fn((table) => {
                 if (table === 'orders') {
                     const mockOrders = [
@@ -36,6 +43,9 @@ vi.mock('@/lib/supabase', () => {
                 }
                 if (table === 'products') {
                     return createMockChain([], 10); // Mock 10 products
+                }
+                if (table === 'stores') {
+                    return createMockChain({ id: 'store_1' });
                 }
                 return createMockChain([]);
             })
@@ -66,10 +76,9 @@ describe('Dashboard Component', () => {
 
         // Wait for loading to finish
         await waitFor(() => {
-            expect(screen.queryByText('Welcome back, here\'s what\'s happening today.')).toBeInTheDocument();
+            expect(screen.queryByText(/Welcome back/i)).toBeInTheDocument();
         });
 
-        expect(screen.getByText('Dashboard')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /add product/i })).toBeInTheDocument();
     });

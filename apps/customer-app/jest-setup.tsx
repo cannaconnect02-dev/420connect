@@ -108,3 +108,62 @@ jest.mock('expo-modules-core', () => ({
         removeSubscription: jest.fn(),
     })),
 }));
+
+// Mock React Native Webview
+jest.mock('react-native-webview', () => {
+    const { View } = require('react-native');
+    return {
+        WebView: (props: any) => <View testID="mock-webview" {...props} />
+    };
+});
+
+// Mock Paystack Webview
+jest.mock('react-native-paystack-webview', () => {
+    const popupMock = {
+        checkout: jest.fn(),
+    };
+    return {
+        usePaystack: () => ({ popup: popupMock }),
+        PaystackProvider: ({ children }: any) => children,
+    };
+});
+
+// Mock Gesture Handler
+jest.mock('react-native-gesture-handler', () => {
+    const { View } = require('react-native');
+    const DummyView = (props: any) => <View {...props} />;
+
+    return {
+        Swipeable: DummyView,
+        DrawerLayout: DummyView,
+        State: {},
+        ScrollView: DummyView,
+        Slider: DummyView,
+        Switch: DummyView,
+        TextInput: DummyView,
+        ToolbarAndroid: DummyView,
+        ViewPagerAndroid: DummyView,
+        DrawerLayoutAndroid: DummyView,
+        WebView: DummyView,
+        NativeViewGestureHandler: DummyView,
+        TapGestureHandler: DummyView,
+        FlingGestureHandler: DummyView,
+        ForceTouchGestureHandler: DummyView,
+        LongPressGestureHandler: DummyView,
+        PanGestureHandler: DummyView,
+        PinchGestureHandler: DummyView,
+        RotationGestureHandler: DummyView,
+        RawButton: DummyView,
+        BaseButton: DummyView,
+        RectButton: DummyView,
+        BorderlessButton: DummyView,
+        FlatList: DummyView,
+        gestureHandlerRootHOC: jest.fn((Component) => Component),
+        Directions: {},
+        GestureHandlerRootView: DummyView,
+    };
+});
+
+// Mock Environment Variables
+process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://mock.supabase.co';
+process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = 'mock-anon-key';

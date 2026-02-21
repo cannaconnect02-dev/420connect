@@ -77,9 +77,15 @@ function CheckoutContent() {
                 const extendedPriceSetting = settingsData.find(s => s.key === 'delivery_extended_price');
                 const maxDistSetting = settingsData.find(s => s.key === 'max_delivery_distance_km');
 
-                if (baseRateSetting?.value) baseRate = Number(baseRateSetting.value);
-                if (thresholdSetting?.value) threshold = Number(thresholdSetting.value);
-                if (extendedPriceSetting?.value) extendedPrice = Number(extendedPriceSetting.value);
+                if (baseRateSetting?.value?.amount) baseRate = Number(baseRateSetting.value.amount);
+                else if (baseRateSetting?.value && !isNaN(Number(baseRateSetting.value))) baseRate = Number(baseRateSetting.value);
+
+                if (thresholdSetting?.value?.km) threshold = Number(thresholdSetting.value.km);
+                else if (thresholdSetting?.value && !isNaN(Number(thresholdSetting.value))) threshold = Number(thresholdSetting.value);
+
+                if (extendedPriceSetting?.value?.rate) extendedPrice = Number(extendedPriceSetting.value.rate);
+                else if (extendedPriceSetting?.value && !isNaN(Number(extendedPriceSetting.value))) extendedPrice = Number(extendedPriceSetting.value);
+
                 if (maxDistSetting?.value?.km) maxDist = Number(maxDistSetting.value.km);
                 else if (maxDistSetting?.value?.value) maxDist = Number(maxDistSetting.value.value); // Legacy migration format
                 else if (maxDistSetting?.value && !isNaN(Number(maxDistSetting.value))) maxDist = Number(maxDistSetting.value);
@@ -87,25 +93,37 @@ function CheckoutContent() {
 
             setMaxDeliveryDistance(maxDist);
 
-            // 2. Fetch Store Location using PostGIS
-            const { data: storeData } = await supabase.rpc('get_store_location', {
-                store_uuid: finalStoreId
-            });
+            // 2. Fetch Store Location and Split settings
+            const { data: storeData, error: storeError } = await supabase
+                .from('stores')
+                .select('latitude, longitude, paystack_splitcode, paystack_split_percentage, paystack_subaccount_code')
+                .eq('id', finalStoreId)
+                .single();
 
-            if (!storeData || !storeData.lat || !storeData.lng) {
+            if (storeError) {
+                console.error("Error fetching store location:", storeError);
+            }
+
+            if (!storeData || !storeData.latitude || !storeData.longitude) {
                 console.error("Store location not found");
                 setDeliveryFee(baseRate); // Fallback
                 return;
             }
 
-            setStoreLocation({ lat: storeData.lat, lng: storeData.lng });
+            setStoreLocation({
+                lat: storeData.latitude,
+                lng: storeData.longitude,
+                splitcode: storeData.paystack_splitcode,
+                split_percentage: storeData.paystack_split_percentage,
+                subaccount_code: storeData.paystack_subaccount_code
+            } as any);
 
             // 3. Calculate Distance
             const distanceKm = getDistanceFromLatLonInKm(
                 address.lat,
                 address.lng,
-                storeData.lat,
-                storeData.lng
+                storeData.latitude,
+                storeData.longitude
             );
 
             if (distanceKm === null) {
@@ -182,18 +200,23 @@ function CheckoutContent() {
 
         const customerAddress = `${address.address_line1}, ${address.city}`;
 
+        const orderPayload = {
+            customer_id: user.id,
+            store_id: finalStoreId,
+            total_amount: finalTotal,
+            status: 'pending',
+            paystack_payment_status: 'failed', // Default to failed/init until charged
+            delivery_address: customerAddress,
+            delivery_location: address.lat && address.lng ? `POINT(${address.lng} ${address.lat})` : null,
+            paystack_splitcode: (storeLocation as any)?.splitcode || null,
+            paystack_split_percentage: (storeLocation as any)?.split_percentage || null,
+            paystack_subaccount_code: (storeLocation as any)?.subaccount_code || null,
+        };
+
         // Create Order (Pending Payment)
         const { data: order, error } = await supabase
             .from('orders')
-            .insert({
-                customer_id: user.id,
-                store_id: finalStoreId,
-                total_amount: finalTotal,
-                status: 'pending',
-                paystack_payment_status: 'failed', // Default to failed/init until charged
-                delivery_address: customerAddress,
-                delivery_location: address.lat && address.lng ? `POINT(${address.lng} ${address.lat})` : null,
-            })
+            .insert(orderPayload)
             .select()
             .single();
 
@@ -366,6 +389,9 @@ function CheckoutContent() {
                 return;
             }
 
+            // Get finalStoreId
+            const finalStoreId = storeId || items[0]?.storeId;
+
             // 1. Create Order First
             const orderId = await createPendingOrder();
             if (!orderId) {
@@ -403,6 +429,9 @@ function CheckoutContent() {
                 body: JSON.stringify({
                     email: paystackEmail,
                     amount: finalTotal,
+                    store_id: finalStoreId,
+                    split_code: (storeLocation as any)?.splitcode || undefined,
+                    subaccount_code: (storeLocation as any)?.subaccount_code || undefined,
                     metadata: {
                         order_id: orderId,
                         custom_fields: [
@@ -516,7 +545,29 @@ function CheckoutContent() {
     }, [paymentModalVisible, currentRef, currentOrderId]);
 
     async function handlePaymentSuccess(reference: string, orderId: string) {
-        if (!processing) setProcessing(true); // Ensure loading state
+        if (processing) return;
+        setProcessing(true); // Ensure loading state
+
+        try {
+            // Force an immediate backend verify to ensure the DB sees the payment as charged,
+            // before we transition to the finding-store screen and merchant queue.
+            const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+            const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+            if (supabaseUrl && supabaseAnonKey) {
+                await fetch(`${supabaseUrl}/functions/v1/paystack-verify`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${supabaseAnonKey}`
+                    },
+                    body: JSON.stringify({ reference })
+                });
+            }
+        } catch (e) {
+            console.log("Error forcing verify on success:", e);
+        }
+
         setPaymentModalVisible(false);
 
         // Navigate to Finding Store
@@ -540,6 +591,8 @@ function CheckoutContent() {
         }
         if (url.includes('cancel') || (url === 'https://standard.paystack.co/close' && url.includes('popup=true'))) {
             // handle cancel logic if needed
+            setPaymentModalVisible(false);
+            setProcessing(false);
         }
     };
 
