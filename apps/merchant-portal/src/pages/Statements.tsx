@@ -77,6 +77,11 @@ export default function Statements() {
 
             if (error) {
                 console.error("Supabase Invoke Error:", error);
+
+                if (error.name === 'FunctionsHttpError') {
+                    throw new Error("Session expired. Please Sign Out and Sign In again.");
+                }
+
                 throw new Error(error.message || 'Failed to generate statement network error');
             }
 

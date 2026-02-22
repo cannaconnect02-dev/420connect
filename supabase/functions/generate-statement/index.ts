@@ -5,59 +5,61 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-Deno.serve(async (req: Request) => {
+export const handler = async (req: Request): Promise<Response> => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
     }
 
     try {
-        console.log("1. Starting generate-statement");
         const bodyText = await req.text();
         const bodyParams = bodyText ? JSON.parse(bodyText) : {};
         const { store_id, week_start_date, week_end_date } = bodyParams;
 
-        console.log("2. Params:", { store_id, week_start_date, week_end_date });
         if (!store_id || !week_start_date || !week_end_date) {
-            throw new Error('Missing required: store_id, week_start_date, week_end_date');
+            throw new Error('Missing required parameters: store_id, week_start_date, week_end_date');
         }
 
-        console.log("3. Creating admin client");
-        const supabaseUrl = Deno.env.get('SUPABASE_URL');
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-        if (!supabaseUrl || !supabaseKey) {
-            console.error("CRITICAL: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars");
-            throw new Error("Server configuration error");
+        // Verify user manually instead of relying on the API Gateway filter
+        const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
+        if (!authHeader) {
+            throw new Error('Missing Authorization header');
         }
 
-        const supabaseAdmin = createClient(
-            supabaseUrl,
-            supabaseKey,
+        const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+        const supabaseAuthClient = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_ANON_KEY') ?? '',
             { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } }
         );
 
-        console.log("4. Fetching store");
+        const { data: authData, error: authError } = await supabaseAuthClient.auth.getUser(token);
+        if (authError || !authData?.user) {
+            throw new Error(`Unauthorized (Invalid Token). Details: ${authError?.message || 'No user found'}`);
+        }
+
+        const supabaseAdmin = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+            { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } }
+        );
+
+        // 1. Fetch Store Details
         const { data: store, error: storeError } = await supabaseAdmin
             .from('stores')
             .select('name, address, paystack_split_percentage')
             .eq('id', store_id)
-            .maybeSingle();
+            .single();
 
-        if (storeError) {
-            console.error("Store Fetch Error:", storeError);
-            throw new Error(`Error fetching store: ${storeError.message}`);
-        }
-        if (!store) {
-            throw new Error(`Store not found in database for ID: ${store_id}`);
-        }
+        if (storeError || !store) throw new Error(`Error fetching store: ${storeError?.message}`);
 
-        console.log("5. Store fetched, fetching settings");
+        // 6. Fetch Global Settings
         const { data: globalSettings, error: settingsError } = await supabaseAdmin
             .from('settings')
             .select('key, value')
             .in('key', ['global_vat_percent', 'global_paystack_fee_percent', 'global_markup_percent']);
 
         if (settingsError) {
-            console.error("Settings Error:", settingsError);
             throw new Error(`Failed to fetch settings: ${settingsError.message}`);
         }
 
@@ -72,7 +74,7 @@ Deno.serve(async (req: Request) => {
         const markupSetting = globalSettings?.find((s: any) => s.key === 'global_markup_percent');
         const globalMarkupPercent = markupSetting ? (Number(markupSetting.value.percent || markupSetting.value) || 20) : 20;
 
-        console.log("6. Settings fetched, fetching orders");
+        // 3. Fetch Successful Orders in timeframe
         const { data: orders, error: ordersError } = await supabaseAdmin
             .from('orders')
             .select(`
@@ -93,12 +95,9 @@ Deno.serve(async (req: Request) => {
             .gte('created_at', week_start_date + 'T00:00:00.000Z')
             .lte('created_at', week_end_date + 'T23:59:59.999Z');
 
-        if (ordersError) {
-            console.error("Orders Fetch Error:", ordersError);
-            throw new Error(`Error fetching orders: ${ordersError.message}`);
-        }
+        if (ordersError) throw new Error(`Error fetching orders: ${ordersError.message}`);
 
-        console.log("7. Orders fetched, fetching ledger");
+        // 4. Fetch Ledger Debt/Cancellation Fees
         const { data: ledgerEntries, error: ledgerError } = await supabaseAdmin
             .from('store_ledger')
             .select('amount, description')
@@ -107,12 +106,8 @@ Deno.serve(async (req: Request) => {
             .lte('created_at', week_end_date + 'T23:59:59.999Z')
             .gt('amount', 0); // Positive means store owes us
 
-        if (ledgerError) {
-            console.error("Ledger Fetch Error:", ledgerError);
-            throw new Error(`Error fetching ledger: ${ledgerError.message}`);
-        }
+        if (ledgerError) throw new Error(`Error fetching ledger: ${ledgerError.message}`);
 
-        console.log("8. Math calculations");
         // --- Perform Calculations ---
         let grossRevenue = 0;
         let totalPaystackFee = 0;
@@ -128,7 +123,7 @@ Deno.serve(async (req: Request) => {
 
             // Calculate the true 'Gross Revenue' for the store (Base Price * Qty)
             for (const item of order.order_items || []) {
-                const itemTotal = item.quantity * Number(item.price_at_time || 0);
+                const itemTotal = item.quantity * Number(item.price_at_time);
                 const itemMarkup = item.quantity * Number(item.markup_at_time || 0);
 
                 orderItemsRevenue += itemTotal;
@@ -158,12 +153,11 @@ Deno.serve(async (req: Request) => {
 
         let totalDebt = 0;
         for (const entry of ledgerEntries || []) {
-            totalDebt += Number(entry.amount || 0);
+            totalDebt += Number(entry.amount);
         }
 
         const netPayout = grossRevenue - totalPlatformMarkup - totalPaystackFee - totalDebt;
 
-        console.log("9. Returning successful JSON");
         // --- Return JSON Payload ---
         return new Response(
             JSON.stringify({
@@ -185,27 +179,15 @@ Deno.serve(async (req: Request) => {
         );
 
     } catch (error: any) {
-        console.error('FATAL Statement Generation Error:', error.message, error.stack);
-
-        try {
-            // Write to debug_logs to see exactly what failed in production
-            const adminClient = createClient(
-                Deno.env.get('SUPABASE_URL') ?? '',
-                Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-                { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } }
-            );
-            await adminClient.from('debug_logs').insert([{
-                source: 'generate-statement',
-                message: error.message,
-                details: { stack: error.stack }
-            }]);
-        } catch (logErr) {
-            console.error('Failed to write debug log:', logErr);
-        }
-
+        console.error('Statement Generation Error:', error.message);
         return new Response(
             JSON.stringify({ success: false, error: error.message, stack: error.stack }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
         );
     }
-});
+};
+
+if (import.meta.main) {
+    // @ts-ignore
+    Deno.serve(handler);
+}
