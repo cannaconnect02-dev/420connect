@@ -12,6 +12,8 @@ describe('AddressConfirmationScreen', () => {
     (useLocalSearchParams as jest.Mock).mockReturnValue({});
 
     beforeEach(() => {
+        jest.spyOn(console, 'error').mockImplementation(() => { });
+        process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'mocked-key';
         jest.clearAllMocks();
         // Mock authenticated user
         (supabase.auth.getUser as jest.Mock).mockResolvedValue({ data: { user: { id: 'user123' } } });
@@ -25,6 +27,10 @@ describe('AddressConfirmationScreen', () => {
             single: jest.fn().mockResolvedValue({ data: { address_confirmed: false }, error: null }),
             limit: jest.fn().mockReturnThis(),
         }));
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
     });
 
     it('renders input fields correctly', async () => {

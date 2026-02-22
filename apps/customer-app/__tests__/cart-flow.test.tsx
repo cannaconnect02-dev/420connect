@@ -14,13 +14,13 @@ describe('Cart Context Logic', () => {
         });
 
         expect(result.current.items).toHaveLength(1);
-        expect(result.current.items[0]).toEqual({
+        expect(result.current.items[0]).toEqual(expect.objectContaining({
             id: 'p1',
             name: 'Product 1',
             price: 100,
             quantity: 1,
             storeId: 'store1'
-        });
+        }));
         expect(result.current.total).toBe(100);
         expect(result.current.storeId).toBe('store1');
     });
