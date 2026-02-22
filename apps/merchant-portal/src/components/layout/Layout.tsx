@@ -6,7 +6,8 @@ import {
     Users,
     LogOut,
     Leaf,
-    Settings
+    Settings,
+    FileText
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
@@ -16,6 +17,7 @@ const navItems = [
     { icon: ClipboardList, label: 'Orders', path: '/orders' },
     { icon: UtensilsCrossed, label: 'Menu', path: '/menu' },
     { icon: Users, label: 'Members', path: '/members' },
+    { icon: FileText, label: 'Statements', path: '/statements' },
     { icon: Settings, label: 'Settings', path: '/settings' },
 ];
 

@@ -213,7 +213,7 @@ export default function OrdersScreen() {
                         )}
                         <View style={styles.itemInfo}>
                             <Text style={styles.itemName}>{item.name}</Text>
-                            <Text style={styles.itemPrice}>R{item.price}</Text>
+                            <Text style={styles.itemPrice}>R{item.price.toFixed(2)}</Text>
                         </View>
 
                         <View style={styles.itemActions}>

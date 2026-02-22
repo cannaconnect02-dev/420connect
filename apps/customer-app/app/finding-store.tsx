@@ -23,6 +23,7 @@ export default function FindingStoreScreen() {
     const [timeLeft, setTimeLeft] = useState(300);
     const [loading, setLoading] = useState(true);
     const progress = useSharedValue(1);
+    const hasAlerted = useRef(false); // Prevent duplicate alerts between polling, realtime, and manual cancel
 
     // Circle Config
     const RADIUS = 120;
@@ -167,6 +168,9 @@ export default function FindingStoreScreen() {
         // Stop everything
         cancelAnimation(progress);
 
+        if (hasAlerted.current) return;
+        hasAlerted.current = true;
+
         Alert.alert("Store Found!", "Your order has been accepted.", [
             { text: "View Order", onPress: () => router.replace(`/order/${orderId}`) }
         ]);
@@ -175,12 +179,22 @@ export default function FindingStoreScreen() {
     const handleOrderCancelled = (by: string) => {
         cancelAnimation(progress);
 
+        // If the customer cancelled it themselves, executeRefund already showed the alert.
+        if (by === 'customer') {
+            return;
+        }
+
+        if (hasAlerted.current) return;
+        hasAlerted.current = true;
+
         let message = "Your order has been cancelled.";
         if (by === 'merchant') {
             message = "The store has cancelled your order. You will be refunded in full.";
+        } else if (by === 'timeout') {
+            message = "No stores were available. Your payment has been refunded.";
         }
 
-        Alert.alert("Store Cancelled", message, [
+        Alert.alert("Order Cancelled", message, [
             { text: "OK", onPress: () => router.replace('/(tabs)') }
         ]);
     };
@@ -213,6 +227,9 @@ export default function FindingStoreScreen() {
                 throw new Error(data?.error || data?.message || "Refund failed");
             }
 
+            if (hasAlerted.current) return;
+            hasAlerted.current = true;
+
             if (reason === 'timeout') {
                 Alert.alert(
                     "No Store Found",
@@ -222,15 +239,18 @@ export default function FindingStoreScreen() {
             } else {
                 Alert.alert(
                     "Order Cancelled",
-                    "Your order has been cancelled and payment refunded.",
+                    "Your order has been successfully cancelled and payment refunded.",
                     [{ text: "OK", onPress: () => router.replace('/(tabs)') }]
                 );
             }
 
         } catch (e: any) {
             console.error("Refund Exception:", e);
-            Alert.alert("Refund Issue", `We could not process the automated refund (${e.message}). Please contact support with Order ID: ${orderId}`);
-            router.replace('/(tabs)');
+            if (!hasAlerted.current) {
+                hasAlerted.current = true;
+                Alert.alert("Refund Issue", `We could not process the automated refund (${e.message}). Please contact support with Order ID: ${orderId}`);
+                router.replace('/(tabs)');
+            }
         }
     };
 

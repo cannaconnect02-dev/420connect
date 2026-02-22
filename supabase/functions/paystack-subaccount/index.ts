@@ -31,11 +31,17 @@ export const handler = async (req: Request): Promise<Response> => {
     );
 
     // Parse request body
-    const { store_id, business_name, settlement_bank, account_number, percentage_charge, subaccount_code, bank_id } = await req.json();
+    const { store_id, business_name, settlement_bank, account_number, subaccount_code, bank_id } = await req.json();
 
-    if (!store_id || !business_name || !account_number || percentage_charge === undefined) {
-      throw new Error('Missing required fields (store_id, business_name, account_number, percentage_charge)');
+    if (!store_id || !business_name || !account_number) {
+      throw new Error('Missing required fields (store_id, business_name, account_number)');
     }
+
+    // NOTE: The percentage_charge is required by Paystack to create a subaccount,
+    // but because we are calculating the platform fee dynamically at checkout 
+    // (Sum of Markups + Delivery Fee + Debt), this subaccount percentage is overriden and ignored.
+    // We hardcode it to 0.1% just to satisfy the Paystack API requirement.
+    const percentage_charge = 0.1;
 
     // Resolve bank code: prefer bank_id lookup, fall back to settlement_bank
     let bankCode = settlement_bank;
@@ -101,77 +107,12 @@ export const handler = async (req: Request): Promise<Response> => {
     const returnedSubaccountCode = paystackData.data.subaccount_code;
     console.log(`Subaccount code: ${returnedSubaccountCode}`);
 
-    // 3. Create or update a Transaction Split
-    // Check if the store already has a split_code
-    const { data: storeData } = await supabaseAdmin
-      .from('stores')
-      .select('paystack_splitcode')
-      .eq('id', store_id)
-      .single();
-
-    let splitCode = storeData?.paystack_splitcode;
-
-    if (splitCode) {
-      // Update the existing split with the new subaccount details
-      console.log(`Updating existing split ${splitCode}`);
-      const splitUpdateResponse = await fetch(`https://api.paystack.co/split/${splitCode}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          subaccounts: [{
-            subaccount: returnedSubaccountCode,
-            share: 100 - parseFloat(percentage_charge)
-          }]
-        })
-      });
-      const splitUpdateData = await splitUpdateResponse.json();
-      if (!splitUpdateData.status) {
-        console.error('Failed to update split, will create new one:', splitUpdateData.message);
-        splitCode = null; // Fall through to create a new one
-      }
-    }
-
-    if (!splitCode) {
-      // Create a new Transaction Split
-      console.log(`Creating new Transaction Split for ${business_name}`);
-      const splitResponse = await fetch('https://api.paystack.co/split', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: `${business_name} Split`,
-          type: 'percentage',
-          currency: 'ZAR',
-          subaccounts: [{
-            subaccount: returnedSubaccountCode,
-            share: 100 - parseFloat(percentage_charge)
-          }],
-          bearer_type: 'all-proportional' // Split Paystack fees proportionally
-        })
-      });
-      const splitData = await splitResponse.json();
-
-      if (!splitData.status) {
-        throw new Error(`Failed to create Transaction Split: ${splitData.message}`);
-      }
-
-      splitCode = splitData.data.split_code;
-      console.log(`Transaction Split created: ${splitCode}`);
-    }
-
-    // 4. Save both codes to Supabase
-    console.log(`Saving to store ${store_id}: subaccount=${returnedSubaccountCode}, split=${splitCode}, pct=${percentage_charge}`);
+    // 3. Save code to Supabase
+    console.log(`Saving to store ${store_id}: subaccount=${returnedSubaccountCode}`);
     const { error: dbError } = await supabaseAdmin
       .from('stores')
       .update({
-        paystack_subaccount_code: returnedSubaccountCode,
-        paystack_splitcode: splitCode,
-        paystack_split_percentage: percentage_charge
+        paystack_subaccount_code: returnedSubaccountCode
       })
       .eq('id', store_id);
 
@@ -179,15 +120,13 @@ export const handler = async (req: Request): Promise<Response> => {
       throw new Error(`Failed to save to database: ${dbError.message}`);
     }
 
-    // 5. Return success
+    // 4. Return success
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Subaccount and Split saved successfully',
+        message: 'Subaccount saved successfully',
         data: {
-          subaccount_code: returnedSubaccountCode,
-          split_code: splitCode,
-          percentage_charge
+          subaccount_code: returnedSubaccountCode
         }
       }),
       {

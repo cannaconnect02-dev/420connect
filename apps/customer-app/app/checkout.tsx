@@ -30,6 +30,7 @@ function CheckoutContent() {
     const [currentRef, setCurrentRef] = useState('');
     const [currentOrderId, setCurrentOrderId] = useState('');
     const [paymentError, setPaymentError] = useState<string | null>(null);
+    const [isSuccess, setIsSuccess] = useState(false);
 
     // Membership Verification State
     const [membershipModalVisible, setMembershipModalVisible] = useState(false);
@@ -200,10 +201,19 @@ function CheckoutContent() {
 
         const customerAddress = `${address.address_line1}, ${address.city}`;
 
+        // Calculate specific totals for reporting.
+        // item.price is the marked-up price the customer pays.
+        // baseAmount is what the store gets (item.price - item.markup_value).
+        const baseAmount = items.reduce((sum, item) => sum + ((item.price - (item.markup_value || 0)) * item.quantity), 0);
+        const markupAmount = items.reduce((sum, item) => sum + ((item.markup_value || 0) * item.quantity), 0);
+
         const orderPayload = {
             customer_id: user.id,
             store_id: finalStoreId,
-            total_amount: finalTotal,
+            total_amount: finalTotal, // Grand total paid by customer (Base + Markup + Delivery)
+            base_amount: baseAmount,  // Pure store revenue
+            markup_amount: markupAmount, // Total item markups
+            delivery_fee: deliveryFee,
             status: 'pending',
             paystack_payment_status: 'failed', // Default to failed/init until charged
             delivery_address: customerAddress,
@@ -231,7 +241,8 @@ function CheckoutContent() {
             order_id: order.id,
             menu_item_id: item.id,
             quantity: item.quantity,
-            price_at_time: item.price
+            price_at_time: item.price,
+            markup_at_time: item.markup_value || 0
         }));
 
         const { error: itemsError } = await supabase
@@ -545,8 +556,8 @@ function CheckoutContent() {
     }, [paymentModalVisible, currentRef, currentOrderId]);
 
     async function handlePaymentSuccess(reference: string, orderId: string) {
-        if (processing) return;
-        setProcessing(true); // Ensure loading state
+        setProcessing(true);
+        setPaymentUrl("");
 
         try {
             // Force an immediate backend verify to ensure the DB sees the payment as charged,
@@ -568,16 +579,29 @@ function CheckoutContent() {
             console.log("Error forcing verify on success:", e);
         }
 
-        setPaymentModalVisible(false);
-
-        // Navigate to Finding Store
-        clearCart();
-        router.replace({
-            pathname: '/finding-store',
-            params: { orderId, reference }
-        });
-        setProcessing(false);
+        // We only set the success state here. A useEffect will handle the routing safely.
+        setIsSuccess(true);
     }
+
+    // Safely execute routing when success is triggered, preventing unmount cancellation
+    useEffect(() => {
+        if (isSuccess && currentOrderId && currentRef) {
+            // First, command the router to move to the timer screen (while modal is still up)
+            router.replace({
+                pathname: '/finding-store',
+                params: { orderId: currentOrderId, reference: currentRef }
+            });
+            clearCart();
+
+            // Second, give the router a tiny fraction of a second to stack the new page natively, 
+            // then close the modal to reveal the timer page neatly without seeing the checkout page.
+            const timer = setTimeout(() => {
+                setPaymentModalVisible(false);
+                setProcessing(false);
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [isSuccess, currentOrderId, currentRef, router, clearCart]);
 
     // WebView Navigation Handler
     const handleWebViewNavigationStateChange = (newNavState: any) => {
@@ -816,6 +840,7 @@ function CheckoutContent() {
                         <WebView
                             source={{ uri: paymentUrl }}
                             onNavigationStateChange={handleWebViewNavigationStateChange}
+                            renderError={(errorName) => <View style={{ flex: 1, backgroundColor: '#0f172a' }} />}
                             style={{ flex: 1 }}
                         />
                     ) : null}

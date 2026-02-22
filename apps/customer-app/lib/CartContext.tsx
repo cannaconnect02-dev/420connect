@@ -8,6 +8,7 @@ export interface CartItem {
     quantity: number;
     storeId: string; // To ensure we only order from one store at a time
     image_url?: string | null;
+    markup_value?: number;
 }
 
 interface CartContextType {
@@ -39,7 +40,8 @@ export function CartProvider({ children }: PropsWithChildren) {
                 price: product.price,
                 quantity: 1,
                 storeId,
-                image_url: product.image_url
+                image_url: product.image_url,
+                markup_value: product.markup_value || 0
             }];
         });
     };

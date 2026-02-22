@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Settings as SettingsIcon, Save, RefreshCw, AlertCircle, Truck, Clock } from 'lucide-react';
+import { Settings as SettingsIcon, Save, RefreshCw, AlertCircle, Truck, Clock, CreditCard } from 'lucide-react';
 
 export default function Settings() {
     const [markup, setMarkup] = useState<number>(20);
@@ -13,6 +13,8 @@ export default function Settings() {
     const [matchingWindow, setMatchingWindow] = useState<number>(300);
     // Store Fees
     const [cancellationFee, setCancellationFee] = useState<number>(20);
+    // Payment Gateway
+    const [paystackFee, setPaystackFee] = useState<number>(2.9);
 
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -28,7 +30,7 @@ export default function Settings() {
             const { data, error } = await supabase
                 .from('settings')
                 .select('key, value')
-                .in('key', ['global_markup_percent', 'delivery_base_rate', 'delivery_threshold_km', 'delivery_extended_price', 'max_delivery_distance_km', 'matching_window_seconds', 'cancellation_fee']);
+                .in('key', ['global_markup_percent', 'delivery_base_rate', 'delivery_threshold_km', 'delivery_extended_price', 'max_delivery_distance_km', 'matching_window_seconds', 'cancellation_fee', 'global_paystack_fee_percent']);
 
             if (error) {
                 console.error('Error fetching settings:', error);
@@ -59,6 +61,9 @@ export default function Settings() {
                             break;
                         case 'cancellation_fee':
                             setCancellationFee(Number(setting.value?.amount || 20));
+                            break;
+                        case 'global_paystack_fee_percent':
+                            setPaystackFee(Number(setting.value?.percent || 2.9));
                             break;
                     }
                 });
@@ -157,6 +162,28 @@ export default function Settings() {
             setMessage({ type: 'success', text: 'Store fee settings saved successfully.' });
         } catch (error: any) {
             setMessage({ type: 'error', text: error.message || 'Failed to save store fee settings.' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleSavePaystackFee = async () => {
+        setSaving(true);
+        setMessage(null);
+
+        try {
+            const { error } = await supabase
+                .from('settings')
+                .upsert({
+                    key: 'global_paystack_fee_percent',
+                    value: { percent: paystackFee }
+                }, { onConflict: 'key' });
+
+            if (error) throw error;
+
+            setMessage({ type: 'success', text: 'Payment Gateway fee saved successfully.' });
+        } catch (error: any) {
+            setMessage({ type: 'error', text: error.message || 'Failed to save Payment Gateway fee.' });
         } finally {
             setSaving(false);
         }
@@ -551,6 +578,73 @@ export default function Settings() {
                                 <Save className="w-5 h-5" />
                             )}
                             Save Delivery Settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Payment Gateway Section */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-2xl">
+                <div className="flex items-center gap-2 mb-6 text-indigo-400 pb-2 border-b border-slate-800">
+                    <CreditCard className="w-5 h-5" />
+                    <h2 className="text-xl font-semibold text-white">Payment Gateway Fees</h2>
+                </div>
+
+                <div className="space-y-6">
+                    <div>
+                        <label className="block text-slate-300 mb-2 font-medium">
+                            Paystack Processing Fee (%)
+                        </label>
+                        <p className="text-sm text-slate-500 mb-4">
+                            Percentage deducted from the store's revenue to cover Paystack card transaction costs.
+                        </p>
+                        <div className="flex items-center gap-4">
+                            <input
+                                type="number"
+                                value={paystackFee}
+                                onChange={(e) => setPaystackFee(Number(e.target.value))}
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                className="bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-white w-32 focus:outline-none focus:border-indigo-500"
+                            />
+                            <span className="text-slate-400 font-bold text-xl">%</span>
+                        </div>
+
+                        {/* Cost Examples */}
+                        <div className="mt-6 p-4 bg-slate-950/50 rounded border border-slate-800">
+                            <h4 className="text-sm font-semibold text-indigo-400 mb-3 uppercase tracking-wider">Fee Cost Examples</h4>
+                            <div className="space-y-3">
+                                {[50, 100, 500].map((orderTotal) => {
+                                    const deduction = orderTotal * (paystackFee / 100);
+                                    return (
+                                        <div key={orderTotal} className="flex justify-between items-center text-sm border-b border-slate-800 last:border-0 pb-2 last:pb-0">
+                                            <span className="text-slate-300">Order Total: <span className="text-white font-medium">R{orderTotal}</span></span>
+                                            <div className="text-right">
+                                                <span className="block text-red-400 font-bold">-R{deduction.toFixed(2)}</span>
+                                                <span className="text-xs text-slate-500">
+                                                    (Store pays)
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-800 flex items-center gap-4">
+                        <button
+                            onClick={handleSavePaystackFee}
+                            disabled={saving || recalculating}
+                            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                        >
+                            {saving ? (
+                                <RefreshCw className="animate-spin w-5 h-5" />
+                            ) : (
+                                <Save className="w-5 h-5" />
+                            )}
+                            Save Gateway Settings
                         </button>
                     </div>
                 </div>

@@ -6,6 +6,7 @@ import Orders from './pages/Orders';
 import Members from './pages/Members';
 import Settings from './pages/Settings';
 import Earnings from './pages/Earnings';
+import Statements from './pages/Statements';
 import ApplicationStatus from './pages/ApplicationStatus';
 import Layout from '@/components/layout/Layout';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
@@ -46,6 +47,9 @@ function AppContent() {
           } />
           <Route path="/earnings" element={
             applicationStatus === 'pending' ? <Navigate to="/application-status" replace /> : <Earnings />
+          } />
+          <Route path="/statements" element={
+            applicationStatus === 'pending' ? <Navigate to="/application-status" replace /> : <Statements />
           } />
           <Route path="/settings" element={
             // Settings is allowed so they can see status/request role, but Layout might show sidebar. 

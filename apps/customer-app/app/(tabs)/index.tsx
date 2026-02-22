@@ -303,7 +303,7 @@ export default function HomeScreen() {
                                 <View style={styles.productInfo}>
                                     <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
                                     <Text style={styles.productPrice}>
-                                        {isAuthenticated ? `R${item.price}` : "Login for price"}
+                                        {isAuthenticated ? `R${item.price.toFixed(2)}` : "Login for price"}
                                     </Text>
                                 </View>
                             </TouchableOpacity>
@@ -323,7 +323,7 @@ export default function HomeScreen() {
                         </View>
                         <Text style={styles.cartConfirmTitle}>Added to Cart!</Text>
                         {lastAddedItem && (
-                            <Text style={styles.cartConfirmItem}>{lastAddedItem.name} - R{lastAddedItem.price}</Text>
+                            <Text style={styles.cartConfirmItem}>{lastAddedItem.name} - R{lastAddedItem.price.toFixed(2)}</Text>
                         )}
 
                         <TouchableOpacity

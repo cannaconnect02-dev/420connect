@@ -33,7 +33,6 @@ export default function Stores() {
     const [loadingBank, setLoadingBank] = useState(false);
 
     // Form state
-    const [percentageCharge, setPercentageCharge] = useState<string>('');
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -72,17 +71,13 @@ export default function Stores() {
         }
     };
 
-    const handleSelectStore = async (store: StoreData) => {
-        setSelectedStore(store);
-        setPercentageCharge(store.paystack_split_percentage?.toString() || '');
-        setError(null);
+    const fetchBankDetails = async (storeId: string) => {
         setLoadingBank(true);
-
         try {
             const { data, error } = await supabase
                 .from('bank_details')
                 .select('business_name, settlement_bank, account_number, bank_id')
-                .eq('store_id', store.id)
+                .eq('store_id', storeId)
                 .maybeSingle();
 
             if (error) throw error;
@@ -92,6 +87,13 @@ export default function Stores() {
         } finally {
             setLoadingBank(false);
         }
+    };
+
+    const handleSelectStore = async (store: StoreData) => {
+        setSelectedStore(store);
+        setError(null);
+        setBankDetails(null); // Clear previous bank details
+        fetchBankDetails(store.id);
     };
 
     const handleConfigureSplit = async (e: React.FormEvent) => {
@@ -105,12 +107,6 @@ export default function Stores() {
             return;
         }
 
-        const percentage = parseFloat(percentageCharge);
-        if (isNaN(percentage) || percentage < 0 || percentage > 100) {
-            setError("Please enter a valid percentage between 0 and 100.");
-            return;
-        }
-
         setIsSaving(true);
         try {
             const { data, error: fnError } = await supabase.functions.invoke('paystack-subaccount', {
@@ -119,7 +115,6 @@ export default function Stores() {
                     business_name: bankDetails.business_name,
                     settlement_bank: bankDetails.settlement_bank,
                     account_number: bankDetails.account_number,
-                    percentage_charge: percentage,
                     subaccount_code: selectedStore.paystack_subaccount_code,
                     bank_id: bankDetails.bank_id
                 }
@@ -146,10 +141,10 @@ export default function Stores() {
 
             if (!data?.success) throw new Error(data?.error || "Failed to create/update subaccount");
 
-            // Update local state to reflect the new split code and percentage
+            // Update local state to reflect the subaccount if it was new
             setStores(prev => prev.map(s =>
                 s.id === selectedStore.id
-                    ? { ...s, paystack_splitcode: data?.data?.split_code, paystack_split_percentage: percentage }
+                    ? { ...s, paystack_subaccount_code: data?.data?.subaccount_code || s.paystack_subaccount_code }
                     : s
             ));
 
@@ -206,20 +201,20 @@ export default function Stores() {
                                         <p className="text-sm text-slate-400 mt-1">{store.address}</p>
                                     </div>
                                     <div className="flex flex-col items-end gap-2">
-                                        {store.paystack_splitcode ? (
+                                        {store.paystack_subaccount_code ? (
                                             <span className="bg-green-500/10 text-green-400 border border-green-500/20 text-xs px-2 py-1 rounded flex items-center gap-1">
                                                 <Percent className="w-3 h-3" />
-                                                Split: {store.paystack_split_percentage}%
+                                                Active Subaccount
                                             </span>
                                         ) : (
                                             <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 text-xs px-2 py-1 rounded">
-                                                No Split Configured
+                                                No Subaccount
                                             </span>
                                         )}
                                         <button
                                             className="h-8 px-3 rounded text-sm font-medium border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
                                             onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); handleSelectStore(store); }}>
-                                            {store.paystack_splitcode ? 'Update Split' : 'Configure Split'}
+                                            {store.paystack_subaccount_code ? 'Update Subaccount' : 'Create Subaccount'}
                                         </button>
                                     </div>
                                 </div>
@@ -234,7 +229,7 @@ export default function Stores() {
                         <div className="bg-slate-900 border border-slate-800 rounded-xl sticky top-6 overflow-hidden">
                             <div className="p-6 border-b border-slate-800">
                                 <h2 className="text-xl font-bold text-white mb-1">{selectedStore.name}</h2>
-                                <p className="text-sm text-slate-400">Configure Paystack Subaccount Split</p>
+                                <p className="text-sm text-slate-400">Configure Paystack Subaccount Details</p>
                             </div>
                             <div className="p-6">
                                 {loadingBank ? (
@@ -242,7 +237,7 @@ export default function Stores() {
                                 ) : !bankDetails ? (
                                     <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 text-amber-400 text-sm flex gap-3">
                                         <AlertCircle className="w-5 h-5 shrink-0" />
-                                        <p>This store has not provided their bank details in the merchant portal yet. You cannot configure a split without bank details.</p>
+                                        <p>This store has not provided their bank details in the merchant portal yet. You cannot configure a subaccount without bank details.</p>
                                     </div>
                                 ) : (
                                     <form onSubmit={handleConfigureSplit} className="space-y-4">
@@ -277,29 +272,7 @@ export default function Stores() {
                                             </div>
                                         )}
 
-                                        <div className="space-y-2">
-                                            <label htmlFor="percentage" className="block text-sm font-medium text-slate-300">420Connect Commission Percentage (%)</label>
-                                            <div className="relative">
-                                                <Percent className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                                                <input
-                                                    id="percentage"
-                                                    type="number"
-                                                    step="0.01"
-                                                    min="0"
-                                                    max="100"
-                                                    required
-                                                    className="w-full h-10 pl-9 pr-3 rounded-md bg-slate-950 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent placeholder:text-slate-500"
-                                                    value={percentageCharge}
-                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPercentageCharge(e.target.value)}
-                                                    placeholder="e.g. 20"
-                                                />
-                                            </div>
-                                            <p className="text-xs text-slate-500 mt-1">
-                                                420Connect commission: <span className="text-white font-medium">{percentageCharge || '0'}%</span>.
-                                                Store receives: <span className="text-green-400 font-medium">{100 - (parseFloat(percentageCharge) || 0)}%</span> of each transaction.
-                                            </p>
-                                        </div>
-
+                                        {/* Reduced Configuration since dynamic charge logic overrides this percentage */}
                                         <div className="pt-2">
                                             <button
                                                 type="submit"
@@ -309,7 +282,7 @@ export default function Stores() {
                                                 {isSaving ? (
                                                     <><Loader className="w-4 h-4 mr-2 animate-spin" /> Configuring with Paystack...</>
                                                 ) : (
-                                                    selectedStore.paystack_splitcode ? 'Update Subaccount' : 'Create Subaccount'
+                                                    selectedStore.paystack_subaccount_code ? 'Update Subaccount' : 'Create Subaccount'
                                                 )}
                                             </button>
                                         </div>

@@ -62,15 +62,46 @@ Deno.serve(async (req) => {
             paystackPayload.authorization_code = pm.paystack_authorization_code;
         }
 
+        // --- Fetch Order Specific Fees ---
+        const orderId = metadata?.order_id;
+        let totalItemMarkupCents = 0;
+        let deliveryFeeCents = 0;
+
+        if (orderId) {
+            // Get delivery fee
+            const { data: orderData, error: orderError } = await supabaseAdmin
+                .from('orders')
+                .select('delivery_fee')
+                .eq('id', orderId)
+                .single();
+
+            if (!orderError && orderData) {
+                deliveryFeeCents = Math.round(Number(orderData.delivery_fee || 0) * 100);
+            }
+
+            // Get sum of markup_at_time for all items
+            const { data: orderItems, error: itemsError } = await supabaseAdmin
+                .from('order_items')
+                .select('markup_at_time, quantity')
+                .eq('order_id', orderId);
+
+            if (!itemsError && orderItems) {
+                const totalMarkup = orderItems.reduce((sum, item) => {
+                    return sum + (Number(item.markup_at_time || 0) * Number(item.quantity || 1));
+                }, 0);
+                totalItemMarkupCents = Math.round(totalMarkup * 100);
+            }
+        }
+
         // --- Store Ledger & Dynamic Split Calculation ---
         let debtRecovered = 0;
         let usedDynamicCharge = false;
 
-        if (store_id) {
-            // Fetch store balance and custom percentage
+        if (store_id && subaccount_code) {
+            // Fetch store balance
             const { data: storeRef, error: storeError } = await supabaseAdmin
                 .from('stores')
-                .select('ledger_balance, paystack_split_percentage')
+                .select('ledger_balance')
                 .eq('id', store_id)
                 .single();
 
@@ -78,41 +109,37 @@ Deno.serve(async (req) => {
                 console.error('Error fetching store ledger details:', storeError);
             } else if (storeRef) {
                 const balanceOwed = Number(storeRef.ledger_balance || 0);
-                const platformSplitPercentage = Number(storeRef.paystack_split_percentage || 17);
 
-                // Option 2 Implementation: We enforce the custom transaction_charge
-                if (balanceOwed > 0 || platformSplitPercentage !== 0) {
-                    paystackPayload.subaccount = subaccount_code; // Must point to the subaccount
+                paystackPayload.subaccount = subaccount_code; // Must point to the subaccount
 
-                    // Calculate platform's percentage cut (in cents)
-                    const basePlatformFeeCents = Math.round(paystackAmount * (platformSplitPercentage / 100));
+                // The platform keeps: Delivery Fee + Item Markups
+                const basePlatformFeeCents = deliveryFeeCents + totalItemMarkupCents;
 
-                    // Add whatever is owed by the store to our cut. 
-                    const debtOwedCents = Math.round(balanceOwed * 100);
+                // Add whatever is owed by the store to our cut. 
+                const debtOwedCents = Math.round(balanceOwed * 100);
 
-                    // The total charge the platform keeps over the store's transaction
-                    // CRITICAL FIX: We must cap this below the total paystackAmount or Paystack will reject it.
-                    // We leave at least R1 (100 cents) for the store/transaction overhead to be safe.
-                    const maxPlatformChargeCents = Math.max(0, paystackAmount - 100);
-                    const requestedPlatformChargeCents = basePlatformFeeCents + debtOwedCents;
+                // The total charge the platform keeps over the store's transaction
+                // CRITICAL FIX: We must cap this below the total paystackAmount or Paystack will reject it.
+                // We leave at least R1 (100 cents) for the store/transaction overhead to be safe.
+                const maxPlatformChargeCents = Math.max(0, paystackAmount - 100);
+                const requestedPlatformChargeCents = basePlatformFeeCents + debtOwedCents;
 
-                    const actualPlatformChargeCents = Math.min(requestedPlatformChargeCents, maxPlatformChargeCents);
+                const actualPlatformChargeCents = Math.min(requestedPlatformChargeCents, maxPlatformChargeCents);
 
-                    // Paystack will send the flat `transaction_charge` to the main account, remainder to the subaccount
-                    paystackPayload.transaction_charge = actualPlatformChargeCents;
-                    usedDynamicCharge = true;
+                // Paystack will send the flat `transaction_charge` to the main account, remainder to the subaccount
+                paystackPayload.transaction_charge = actualPlatformChargeCents;
+                usedDynamicCharge = true;
 
-                    // Tag how much debt was recovered in metadata (only the portion above the base fee)
-                    const actualDebtRecoveredCents = Math.max(0, actualPlatformChargeCents - basePlatformFeeCents);
-                    debtRecovered = actualDebtRecoveredCents / 100;
+                // Tag how much debt was recovered in metadata (only the portion above the base fee)
+                const actualDebtRecoveredCents = Math.max(0, actualPlatformChargeCents - basePlatformFeeCents);
+                debtRecovered = actualDebtRecoveredCents / 100;
 
-                    if (debtRecovered > 0) {
-                        paystackPayload.metadata.debt_recovered = debtRecovered;
-                        paystackPayload.metadata.store_id = store_id;
-                        console.log(`Overriding split: ${platformSplitPercentage}% fee + R${debtRecovered} debt recovery (Capped: ${actualPlatformChargeCents} cents).`);
-                    } else {
-                        console.log(`Overriding split: custom ${platformSplitPercentage}% base fee. Total charge: ${actualPlatformChargeCents} cents.`);
-                    }
+                if (debtRecovered > 0) {
+                    paystackPayload.metadata.debt_recovered = debtRecovered;
+                    paystackPayload.metadata.store_id = store_id;
+                    console.log(`Dynamic Charge: R${basePlatformFeeCents / 100} base + R${debtRecovered} debt recovery (Capped: ${actualPlatformChargeCents} cents).`);
+                } else {
+                    console.log(`Dynamic Charge: R${actualPlatformChargeCents / 100} base fee (Delivery + Markup). Total charge: ${actualPlatformChargeCents} cents.`);
                 }
             }
         }

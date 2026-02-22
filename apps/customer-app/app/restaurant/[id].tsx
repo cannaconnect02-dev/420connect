@@ -110,7 +110,7 @@ export default function RestaurantDetails() {
                                 <Text style={styles.menuTitle}>{item.name}</Text>
                                 <Text style={styles.menuDesc} numberOfLines={2}>{item.description}</Text>
                                 <Text style={styles.menuPrice}>
-                                    {isAuthenticated ? `R${item.price}` : "Login for price"}
+                                    {isAuthenticated ? `R${item.price.toFixed(2)}` : "Login for price"}
                                 </Text>
                             </View>
                             {isAuthenticated && (
@@ -156,7 +156,7 @@ export default function RestaurantDetails() {
                             <View style={styles.modalTitleRow}>
                                 <Text style={styles.modalTitle}>{selectedProduct.name}</Text>
                                 <Text style={styles.modalPrice}>
-                                    {isAuthenticated ? `R${selectedProduct.price}` : ""}
+                                    {isAuthenticated ? `R${selectedProduct.price.toFixed(2)}` : ""}
                                 </Text>
                             </View>
 
@@ -192,7 +192,7 @@ export default function RestaurantDetails() {
                                     }}
                                 >
                                     <Plus size={24} color="white" />
-                                    <Text style={styles.modalAddText}>Add to Cart - R{selectedProduct.price}</Text>
+                                    <Text style={styles.modalAddText}>Add to Cart - R{selectedProduct.price.toFixed(2)}</Text>
                                 </TouchableOpacity>
                             ) : (
                                 <TouchableOpacity
@@ -216,7 +216,7 @@ export default function RestaurantDetails() {
                         </View>
                         <Text style={styles.cartConfirmTitle}>Added to Cart!</Text>
                         {lastAddedItem && (
-                            <Text style={styles.cartConfirmItem}>{lastAddedItem.name} - R{lastAddedItem.price}</Text>
+                            <Text style={styles.cartConfirmItem}>{lastAddedItem.name} - R{lastAddedItem.price.toFixed(2)}</Text>
                         )}
 
                         <TouchableOpacity
